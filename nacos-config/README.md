@@ -66,8 +66,8 @@ nacos-config/
 | `shared-jdbc.yaml` | `hmdp.db.host` | MySQL 地址 |
 | | `hmdp.db.port` | MySQL 端口，默认 `3306` |
 | | `hmdp.db.database` | 数据库名 |
-| | `hmdp.db.un` | 数据库用户名，**默认 `root`，务必修改** |
-| | `hmdp.db.pw` | 数据库密码，**默认 `root`，务必修改** |
+| | `hmdp.db.un` | 数据库用户名，**必填** |
+| | `hmdp.db.pw` | 数据库密码，**必填** |
 | `shared-redis.yaml` | `redis.host` | Redis 地址 |
 | | `redis.pw` | Redis 密码 |
 | `shared-rabbitmq.yaml` | `rabbitmq.host` | RabbitMQ 地址 |
@@ -80,7 +80,7 @@ nacos-config/
 | `shared-seata.yaml` | `nacos.server-addr` | Nacos 地址 |
 | | `nacos.username` / `nacos.password` | Nacos 账号密码 |
 
-> **安全提示**：带默认值的占位符（如 `${hmdp.db.pw:root}`）在变量未配置时会直接使用默认值。部署到正式环境前，请确认这些变量都已显式配置，不要依赖默认值。
+> **安全提示**：数据库账号密码（`hmdp.db.un` / `hmdp.db.pw`）**刻意不设默认值**。若未配置，服务启动时会直接报错而不是静默使用 `root` 账号，属于有意的 fail-fast 设计。其余带默认值的占位符（如 `${hmdp.db.port:3306}`）在变量未配置时会取默认值，部署前请按需确认。
 
 ## 数据库初始化
 

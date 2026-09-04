@@ -2,7 +2,7 @@ spring:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://${hmdp.db.host}:${hmdp.db.port:3306}/${hmdp.db.database}?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true
-    username: ${hmdp.db.un:root}
-    password: ${hmdp.db.pw:root}
+    username: ${hmdp.db.un} # 你的数据库用户名
+    password: ${hmdp.db.pw} # 你的数据库密码
 mybatis-plus:
   type-aliases-package: com.hmdp.${hmdp.mp.package}.domain
