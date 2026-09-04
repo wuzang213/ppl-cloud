@@ -1,0 +1,15 @@
+server:
+  port: 8084
+spring:
+  jackson:
+    default-property-inclusion: non_null # JSON处理时忽略非空字段
+hmdp:
+  db:
+    database: ${db.voucher} # 你的数据库名称
+  mp:
+    package: voucher
+  swagger:
+    title: 优惠券服务接口文档
+    package: com.hmdp.voucher.controller
+mybatis-plus:
+  mapper-locations: classpath*:mapper/*.xml

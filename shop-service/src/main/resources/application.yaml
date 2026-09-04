@@ -1,0 +1,23 @@
+server:
+  port: 8082
+spring:
+  kafka:
+    bootstrap-servers: ${kafka.bootstrap.servers} # 你的Kafka地址
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "*"
+  jackson:
+    default-property-inclusion: non_null
+hmdp:
+  db:
+    database: ${db.shop} # 你的数据库名称
+  mp:
+    package: shop
+  swagger:
+    title: 店铺服务接口文档
+    package: com.hmdp.shop.controller

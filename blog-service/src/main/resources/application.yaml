@@ -1,0 +1,39 @@
+server:
+  port: 8081
+  tomcat:
+    threads:
+      max: 50
+    accept-count: 50
+    max-connections: 100
+spring:
+  kafka:
+    bootstrap-servers: ${kafka.bootstrap.servers} # 你的Kafka地址
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "*"
+  jackson:
+    default-property-inclusion: non_null
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 10MB
+hmdp:
+  db:
+    database: ${db.blog} # 你的数据库名称
+  mp:
+    package: blog
+  swagger:
+    title: 博客服务接口文档
+    package: com.hmdp.blog.controller
+  upload:
+    dir: ${upload.dir} # 你的上传文件目录
+feign:
+  okhttp:
+    enabled: true # 开启okhttp
+  sentinel:
+    enabled: true # 开启feign对sentinel的支持

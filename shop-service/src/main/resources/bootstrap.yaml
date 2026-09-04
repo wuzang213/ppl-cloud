@@ -1,0 +1,29 @@
+spring:
+  application:
+    name: shop-service # 服务名称
+  cloud:
+    nacos:
+      server-addr: ${nacos.server-addr:127.0.0.1:8848} # 本地默认nacos地址，部署时覆盖
+      config:
+        file-extension: yaml # 文件后缀名
+        # 服务自身配置 blog-service.yaml 读取 HMDP_CLOUD 分组
+        group: HMDP_CLOUD
+        shared-configs: # 共享配置逐条指定分组+动态刷新
+          - dataId: shared-jdbc.yaml
+            group: HMDP_CLOUD
+            refresh: true
+          - dataId: shared-log.yaml
+            group: HMDP_CLOUD
+            refresh: true
+          - dataId: shared-redis.yaml
+            group: HMDP_CLOUD
+            refresh: true
+          - dataId: shared-canal.yaml
+            group: HMDP_CLOUD
+            refresh: true
+          - dataId: shared-rabbitmq.yaml
+            group: HMDP_CLOUD
+            refresh: true
+          - dataId: shared-sentinel.yaml
+            group: HMDP_CLOUD
+            refresh: true

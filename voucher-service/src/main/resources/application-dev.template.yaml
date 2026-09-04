@@ -1,0 +1,5 @@
+# 【模板文件】复制本文件重命名为 application-dev.yaml，
+hmdp:
+  db:
+    host: ${db.host}
+    pw: ${db.pw}

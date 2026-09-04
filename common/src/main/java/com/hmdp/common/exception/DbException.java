@@ -1,0 +1,14 @@
+package com.hmdp.common.exception;
+
+/**
+ * 数据库异常
+ */
+public class DbException extends CommonException {
+    public DbException(String message) {
+        super(message, 500);
+    }
+
+    public DbException(String message, Throwable cause) {
+        super(message, cause, 500);
+    }
+}

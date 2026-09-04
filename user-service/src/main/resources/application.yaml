@@ -1,0 +1,22 @@
+server:
+  port: 8083
+spring:
+  jackson:
+    default-property-inclusion: non_null
+hmdp:
+  jwt:
+    key-store: jwt/private.jks
+    key-store-password: ${KEY_STORE_PASSWORD} # 密钥库密码
+    key-alias: ${KEY_STORE_ALIAS} # 密钥库别名
+  db:
+    database: ${db.user} # 你的数据库名称
+  mp:
+    package: user
+  swagger:
+    title: 用户服务接口文档
+    package: com.hmdp.user.controller
+feign:
+  okhttp:
+    enabled: true # 开启okhttp
+  sentinel:
+    enabled: true # 开启feign对sentinel的支持

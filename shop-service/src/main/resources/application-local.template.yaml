@@ -1,0 +1,5 @@
+# 【模板文件】复制本文件，重命名为 application-local.yaml，填入真实环境参数，
+hmdp:
+  db:
+    host: ${db.host} # 修改为你自己的虚拟机IP地址
+    pw: ${db.pw} # 修改为你的MySQL密码

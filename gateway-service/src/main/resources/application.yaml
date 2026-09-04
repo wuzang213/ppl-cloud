@@ -1,0 +1,18 @@
+server:
+  port: 8080
+hmdp:
+  auth:
+    key-store: jwt/public.jks
+    key-store-password: ${KEY_STORE_PASSWORD} # 密钥库密码
+    key-alias: ${KEY_STORE_ALIAS} # 密钥库别名
+    excludePaths:
+      - /shop/of/name
+      - /shop/of/type
+      - /voucher/**
+      - /shop-type/**
+      - /upload/**
+      - /blog/hot
+      - /user/code
+      - /user/login
+      - /user/refresh
+      - /user/logout

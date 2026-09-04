@@ -1,0 +1,22 @@
+spring:
+  application:
+    name: gateway
+  cloud:
+    nacos:
+      server-addr: ${nacos.server-addr:127.0.0.1:8848} # 本地默认nacos地址，部署时覆盖
+      config:
+        file-extension: yaml
+        group: HMDP_CLOUD
+        shared-configs:
+          - dataId: shared-log.yaml
+            group: HMDP_CLOUD
+            refresh: true
+          - dataId: shared-redis.yaml
+            group: HMDP_CLOUD
+            refresh: true
+          - dataId: shared-sentinel.yaml
+            group: HMDP_CLOUD
+            refresh: true
+          - dataId: shared-swagger.yaml
+            group: HMDP_CLOUD
+            refresh: true
