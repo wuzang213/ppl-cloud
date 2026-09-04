@@ -1,0 +1,15 @@
+knife4j:
+  enable: true
+  openapi:
+    title: ${hmdp.swagger.title:评评哩接口文档}
+    description: ${hmdp.swagger.description:评评哩接口文档}
+    email: ${hmdp.swagger.email:未知}
+    concat: ${hmdp.swagger.concat:佚名}
+    url: https://github.com/wuzang213
+    version: v1.0.0
+    group:
+      default:
+        group-name: default
+        api-rule: package
+        api-rule-resources:
+          - ${hmdp.swagger.package}

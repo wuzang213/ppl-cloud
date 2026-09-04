@@ -1,0 +1,52 @@
+[
+    {
+        "id": "blog",
+        "predicates": [{
+            "name": "Path",
+            "args": {"_genkey_0":"/blog/**","_genkey_1":"/blog-comments/**","_genkey_2":"/follow/**","_genkey_3": "/upload/**"}
+        }],
+        "filters": [],
+        "uri": "lb://blog-service"
+    },
+    {
+        "id": "shop",
+        "predicates": [{
+            "name": "Path",
+            "args": {"_genkey_0":"/shop/**","_genkey_1":"/shop-type/**"}
+        }],
+        "filters": [],
+        "uri": "lb://shop-service"
+    },
+    {
+        "id": "user",
+        "predicates": [{
+            "name": "Path",
+            "args": {"_genkey_0":"/user/**"}
+        }],
+        "filters": [],
+        "uri": "lb://user-service"
+    },
+    {
+        "id": "voucher",
+        "predicates": [{
+            "name": "Path",
+            "args": {"_genkey_0":"/voucher/**","_genkey_1":"/voucher-order/**"}
+        }],
+        "filters": [],
+        "uri": "lb://voucher-service"
+    },
+     {
+        "id": "agent",
+        "predicates": [{
+            "name": "Path",
+            "args": {"_genkey_0":"/agent/**"}
+        }],
+        "filters": [{
+          "name": "StripPrefix",
+          "args": {
+            "parts": 1
+          }
+        }],
+        "uri": "lb://agent-service"
+    }
+]

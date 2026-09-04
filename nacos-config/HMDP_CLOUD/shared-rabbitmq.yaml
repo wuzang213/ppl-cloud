@@ -1,0 +1,25 @@
+spring:
+  rabbitmq:
+    host: ${rabbitmq.host} # 你的虚拟机IP
+    port: 5672 # 端口
+    virtual-host: ${rabbitmq.virtual-host} # 你的虚拟主机
+    username: ${rabbitmq.username} # 你的用户名
+    password: ${rabbitmq.password} # 你的密码
+    publisher-confirm-type: correlated # 开启publisher confirm机制，并设置confirm类型，- correlated：MQ异步回调返回回执
+    publisher-returns: ${hmdp.mq.publisher-returns:true} # 开启publisher return机制
+    connection-timeout: ${hmdp.mq.connection-timeout:5s} # 设置MQ的连接超时时间
+    listener:
+      simple:
+        acknowledge-mode: ${hmdp.mq.listener.acknowledge-mode:auto} # 自动ack，none为不处理，manual为手动
+        retry:
+          enabled: ${hmdp.mq.listener.retry.enabled:true} # 开启消费者失败重试
+          initial-interval: ${hmdp.mq.listener.retry.initial-interval:1000ms} # 初识的失败等待时长为1秒
+          multiplier: ${hmdp.mq.listener.retry.multiplier:1} # 失败的等待时长倍数，下次等待时长 = multiplier * last‑interval
+          max-attempts: ${hmdp.mq.listener.retry.max-attempts:3} # 最大重试次数
+          stateless: ${hmdp.mq.listener.retry.stateless:true} # true无状态；false有状态。如果业务中包含事务，这里改为false
+    template:
+      retry:
+        enabled: ${hmdp.mq.template.retry.enabled:true} # 开启超时重试机制
+        initial-interval: ${hmdp.mq.template.retry.initial-interval:1000ms} # 失败后的初始等待时间
+        multiplier: ${hmdp.mq.template.retry.multiplier:1} # 失败后下次的等待时长倍数，下次等待时长 = initial‑interval * multiplier
+        max-attempts: ${hmdp.mq.template.retry.max-attempts:3} # 最大重试次数

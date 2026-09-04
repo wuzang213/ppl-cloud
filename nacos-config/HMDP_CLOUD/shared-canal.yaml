@@ -1,0 +1,3 @@
+canal:
+  destination: xxx # canal的集群名字，要与安装canal时设置的名称一致
+  server: ${canal.server} # 你的canal服务地址
