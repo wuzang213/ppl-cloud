@@ -69,4 +69,4 @@
 
 ## 关联项目
 
-- [agent-service](https://github.com/wuzang213/agent-service)：本地生活智能问答 Agent，通过网关与本项目的微服务通信
+- [ppl-agent-service](https://github.com/wuzang213/ppl-agent-service)：本地生活智能问答 Agent，通过网关与本项目的微服务通信
