@@ -14,10 +14,13 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
 import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
 import static com.hmdp.common.constants.RedisConstants.CACHE_NULL_TTL;
@@ -32,7 +35,18 @@ public class CacheClient {
 
     private final StringRedisTemplate stringRedisTemplate;
 
-    private static final ExecutorService CACHE_REBUILD_EXECUTOR = Executors.newFixedThreadPool(10);
+    // 显式 ThreadPoolExecutor + 有界队列 + 拒绝策略，替代 Executors.newFixedThreadPool(10)
+    private static final AtomicInteger REBUILD_SEQ = new AtomicInteger(0);
+    private static final ExecutorService CACHE_REBUILD_EXECUTOR = new ThreadPoolExecutor(
+            2, 10, 60, TimeUnit.SECONDS,
+            new LinkedBlockingQueue<>(128),
+            r -> {
+                Thread t = new Thread(r, "cache-rebuild-" + REBUILD_SEQ.incrementAndGet());
+                t.setDaemon(true);
+                return t;
+            },
+            new ThreadPoolExecutor.CallerRunsPolicy()
+    );
 
     public CacheClient(StringRedisTemplate stringRedisTemplate) {
         this.stringRedisTemplate = stringRedisTemplate;
@@ -96,6 +110,37 @@ public class CacheClient {
         this.set(key, r, time, unit);
         return r;
     }
+
+
+    /**
+     * 列表版本旁路缓存，解决缓存穿透，返回List<R>
+     */
+    public <R,ID> List<R> queryListWithPassThrough(
+            String keyPrefix, ID id, Class<R> itemType,
+            Function<ID, List<R>> dbFallback, Long time, TimeUnit unit){
+        String key = keyPrefix + id;
+        // 1.查Redis
+        String json = stringRedisTemplate.opsForValue().get(key);
+        // 2.命中
+        if (StrUtil.isNotBlank(json)) {
+            return JSONUtil.toList(json, itemType);
+        }
+        // 命中空值
+        if(json != null){
+            return Collections.emptyList();
+        }
+        // 3.回源查数据库
+        List<R> dataList = dbFallback.apply(id);
+        // 数据库无数据，缓存空数组防止穿透
+        if(dataList == null || dataList.isEmpty()){
+            stringRedisTemplate.opsForValue().set(key, "[]", CACHE_NULL_TTL, TimeUnit.MINUTES);
+            return Collections.emptyList();
+        }
+        // 写入Redis，自带jitter随机TTL
+        this.set(key, dataList, time, unit);
+        return dataList;
+    }
+
 
     // 逻辑过期解决缓存击穿
     public <R, ID> R queryWithLogicalExpire(

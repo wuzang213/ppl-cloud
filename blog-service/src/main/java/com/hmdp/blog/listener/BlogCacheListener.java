@@ -19,10 +19,14 @@ import javax.annotation.Resource;
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
+import static com.hmdp.common.constants.RedisConstants.BLOG_LIKED_KEY;
 import static com.hmdp.common.constants.RedisConstants.CACHE_BLOG_HOT_KEY;
 import static com.hmdp.common.constants.RedisConstants.CACHE_BLOG_KEY;
+import static com.hmdp.common.constants.RedisConstants.FAVORITE_BLOG_KEY;
+import static com.hmdp.common.constants.RedisConstants.FOLLOW_KEY;
 
 
 /**
@@ -56,8 +60,17 @@ public class BlogCacheListener {
             )
     ))
     public void handleCacheSync(CacheSyncMessage message, Message amqp) {
-        log.debug("BlogCacheListener 收到缓存同步消息，type={}", message.getType());
+        log.debug("BlogCacheListener 收到缓存同步消息，type={}, eventType={}",
+                message.getType(), message.getEventType());
         if (!outboxConsumeService.tryMarkConsumed(amqp.getMessageProperties().getMessageId())) {
+            return;
+        }
+        if ("BLOG_FAVORITE".equals(message.getType())) {
+            applyFavoriteChange(message);
+            return;
+        }
+        if ("FOLLOW".equals(message.getType())) {
+            applyFollowChange(message);
             return;
         }
         if (!"BLOG".equals(message.getType())) {
@@ -69,7 +82,49 @@ public class BlogCacheListener {
         blogHotCache.invalidateAll();
         deleteRedisKeysByPattern(CACHE_BLOG_HOT_KEY + "*");
         stringRedisTemplate.delete(CACHE_BLOG_KEY + blogId);
-        log.debug("已清除Blog缓存，id={}", blogId);
+        if ("BLOG_DELETED".equals(message.getEventType())) {
+            // 笔记删除时顺带清理点赞 ZSet（原 afterCommit 逻辑迁移至此，可对账重试）
+            stringRedisTemplate.delete(BLOG_LIKED_KEY + blogId);
+        }
+        log.debug("已清除Blog缓存，id={}, eventType={}", blogId, message.getEventType());
+    }
+
+    /**
+     * 维护用户收藏笔记的 Redis Set（原 afterCommit 逻辑迁移至此，可对账重试）。
+     */
+    private void applyFavoriteChange(CacheSyncMessage message) {
+        Map<String, Object> data = message.getData();
+        if (data == null || data.get("userId") == null || data.get("blogId") == null) {
+            return;
+        }
+        long userId = ((Number) data.get("userId")).longValue();
+        String blogId = String.valueOf(data.get("blogId"));
+        String key = FAVORITE_BLOG_KEY + userId;
+        if (Boolean.TRUE.equals(data.get("favorite"))) {
+            stringRedisTemplate.opsForSet().add(key, blogId);
+        } else {
+            stringRedisTemplate.opsForSet().remove(key, blogId);
+        }
+        log.debug("同步笔记收藏关系，userId={}, blogId={}, favorite={}", userId, blogId, data.get("favorite"));
+    }
+
+    /**
+     * 维护用户关注集合 Redis Set（原 afterCommit 逻辑迁移至此，可对账重试）。
+     */
+    private void applyFollowChange(CacheSyncMessage message) {
+        Map<String, Object> data = message.getData();
+        if (data == null || data.get("userId") == null || data.get("followUserId") == null) {
+            return;
+        }
+        long userId = ((Number) data.get("userId")).longValue();
+        String followUserId = String.valueOf(data.get("followUserId"));
+        String key = FOLLOW_KEY + userId;
+        if (Boolean.TRUE.equals(data.get("follow"))) {
+            stringRedisTemplate.opsForSet().add(key, followUserId);
+        } else {
+            stringRedisTemplate.opsForSet().remove(key, followUserId);
+        }
+        log.debug("同步关注关系，userId={}, followUserId={}, follow={}", userId, followUserId, data.get("follow"));
     }
 
     /**

@@ -2,6 +2,7 @@ package com.hmdp.blog.controller;
 
 import com.hmdp.blog.domain.BlogComments;
 import com.hmdp.blog.service.IBlogCommentsService;
+import com.hmdp.common.annotation.LoginRequired;
 import com.hmdp.common.domain.Result;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -27,6 +28,7 @@ public class BlogCommentsController {
 
     @Operation(summary = "发表评论")
     @PostMapping
+    @LoginRequired
     public Result save(@RequestBody BlogComments comment) {
         return commentService.saveComment(comment);
     }
@@ -40,6 +42,7 @@ public class BlogCommentsController {
 
     @Operation(summary = "删除评论")
     @DeleteMapping("/{id}")
+    @LoginRequired
     public Result delete(@PathVariable("id") @Parameter(description = "评论ID") Long id) {
         return commentService.deleteComment(id);
     }

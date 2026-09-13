@@ -3,6 +3,8 @@ package com.hmdp.common.constants;
 public class RedisConstants {
     public static final String LOGIN_CODE_KEY = "login:code:";
     public static final Long LOGIN_CODE_TTL = 2L;
+    /** 短信验证码发送冷却 key，60 秒防刷 */
+    public static final String LOGIN_CODE_COOL_KEY = "login:code:cool:";
     public static final String LOGIN_USER_KEY = "login:token:";
     public static final Long LOGIN_USER_TTL = 36000L;
 
@@ -39,4 +41,6 @@ public class RedisConstants {
     public static final String REFRESH_TOKEN_KEY = "login:refresh:";
     public static final String REFRESH_INDEX_KEY = "login:refresh:index:";
     public static final String TOKEN_VERSION_KEY = "login:token-version:";
+    /** 用户设备集合 key：login:devices:{userId}，值为 deviceId 集合，替代 keys() 扫描 */
+    public static final String LOGIN_DEVICES_KEY = "login:devices:";
 }

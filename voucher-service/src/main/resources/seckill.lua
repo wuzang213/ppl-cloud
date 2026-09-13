@@ -13,8 +13,8 @@ local orderKey = 'seckill:{' .. voucherId .. '}:order'
 
 -- 3.脚本业务
 -- 3.1.判断库存是否充足 get stockKey
-if(tonumber(redis.call('get', stockKey)) <= 0) then
-    -- 3.2.库存不足，返回1
+local stock = tonumber(redis.call('get', stockKey) or '0')
+if stock <= 0 then
     return 1
 end
 -- 3.2.判断用户是否下单 SISMEMBER orderKey userId

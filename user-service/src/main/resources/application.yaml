@@ -20,3 +20,5 @@ feign:
     enabled: true # 开启okhttp
   sentinel:
     enabled: true # 开启feign对sentinel的支持
+canal:
+  filter: 'hmdp_user\.business_outbox'

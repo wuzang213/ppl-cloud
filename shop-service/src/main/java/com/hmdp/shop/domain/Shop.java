@@ -8,7 +8,6 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.experimental.Accessors;
 import org.springframework.data.annotation.Transient;
-import top.javatool.canal.client.annotation.CanalTable;
 
 import java.io.Serializable;
 import java.time.LocalDateTime;
@@ -17,7 +16,6 @@ import java.time.LocalDateTime;
 @EqualsAndHashCode(callSuper = false)
 @Accessors(chain = true)
 @TableName("tb_shop")
-@CanalTable("tb_shop")
 public class Shop implements Serializable {
 
     private static final long serialVersionUID = 1L;

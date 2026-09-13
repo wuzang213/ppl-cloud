@@ -1,5 +1,6 @@
 package com.hmdp.user.controller;
 
+import com.hmdp.common.annotation.LoginRequired;
 import com.hmdp.common.domain.Result;
 import com.hmdp.user.domain.LoginFormDTO;
 import com.hmdp.user.domain.UserInfoDTO;
@@ -56,12 +57,14 @@ public class UserController {
 
     @Operation(summary = "当前用户全设备下线")
     @PostMapping("/kick-all")
+    @LoginRequired
     public Result kickAll() {
         return userService.kickAllDevices();
     }
 
     @Operation(summary = "查询当前登录用户")
     @GetMapping("/me")
+    @LoginRequired
     public Result me() {
         return userService.getMe();
     }
@@ -80,12 +83,14 @@ public class UserController {
 
     @Operation(summary = "签到")
     @PostMapping("/sign")
+    @LoginRequired
     public Result sign() {
         return userService.sign();
     }
 
     @Operation(summary = "查询签到次数")
     @GetMapping("/sign/count")
+    @LoginRequired
     public Result signCount() {
         return userService.signCount();
     }
@@ -104,12 +109,14 @@ public class UserController {
 
     @Operation(summary = "修改用户信息")
     @PutMapping("/info/update")
+    @LoginRequired
     public Result updateInfo(@RequestBody UserInfoDTO dto) {
         return userService.updateInfo(dto);
     }
 
     @Operation(summary = "查询积分与等级")
     @GetMapping("/credits")
+    @LoginRequired
     public Result credits() {
         return userService.getCredits();
     }

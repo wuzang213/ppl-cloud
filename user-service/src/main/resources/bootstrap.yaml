@@ -30,5 +30,8 @@ spring:
           - dataId: shared-seata.yaml
             group: DEFAULT_GROUP
             refresh: true
+          - dataId: shared-canal.yaml
+            group: HMDP_CLOUD
+            refresh: true
 seata:
   tx-service-group: hmdp  # 本地只留这一行，标识当前服务属于hmdp事务组

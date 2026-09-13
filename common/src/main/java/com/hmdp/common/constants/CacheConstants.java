@@ -15,4 +15,5 @@ public class CacheConstants {
     public static final String QUEUE_SHOP_CACHE = "cache.sync.shop.queue";
     public static final String QUEUE_BLOG_CACHE = "cache.sync.blog.queue";
     public static final String QUEUE_VOUCHER_CACHE = "cache.sync.voucher.queue";
+    public static final String QUEUE_USER_CACHE = "cache.sync.user.queue";
 }

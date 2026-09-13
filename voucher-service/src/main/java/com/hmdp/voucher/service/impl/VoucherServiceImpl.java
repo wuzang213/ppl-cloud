@@ -1,11 +1,11 @@
 package com.hmdp.voucher.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
-import cn.hutool.core.util.StrUtil;
-import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.github.benmanes.caffeine.cache.Cache;
 
+import com.hmdp.common.cache.CacheClient;
+import com.hmdp.common.cache.SingleFlight;
 import com.hmdp.common.domain.CacheSyncMessage;
 import com.hmdp.common.domain.Result;
 import com.hmdp.common.outbox.OutboxWriter;
@@ -15,15 +15,13 @@ import com.hmdp.voucher.domain.VoucherDTO;
 import com.hmdp.voucher.mapper.VoucherMapper;
 import com.hmdp.voucher.service.ISeckillVoucherService;
 import com.hmdp.voucher.service.IVoucherService;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import javax.annotation.Resource;
-import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import static com.hmdp.common.constants.RedisConstants.CACHE_VOUCHER_LIST_KEY;
@@ -37,13 +35,16 @@ public class VoucherServiceImpl extends ServiceImpl<VoucherMapper, Voucher> impl
     private ISeckillVoucherService seckillVoucherService;
 
     @Resource
-    private StringRedisTemplate stringRedisTemplate;
-
-    @Resource
     private Cache<Long, List<Voucher>> voucherListCache;
 
     @Resource
     private OutboxWriter outboxWriter;
+
+    @Resource
+    private SingleFlight singleFlight;
+
+    @Resource
+    private CacheClient cacheClient;
 
     @Override
     @Transactional
@@ -51,7 +52,7 @@ public class VoucherServiceImpl extends ServiceImpl<VoucherMapper, Voucher> impl
         Voucher voucher = BeanUtil.copyProperties(dto, Voucher.class);
         save(voucher);
         outboxWriter.write("VOUCHER", voucher.getId(), "VOUCHER_CREATED",
-                new CacheSyncMessage("VOUCHER", voucher.getId(), voucher.getShopId()));
+                new CacheSyncMessage("VOUCHER", voucher.getId(), voucher.getShopId(), "VOUCHER_CREATED"));
         return Result.ok(voucher.getId());
     }
 
@@ -59,25 +60,16 @@ public class VoucherServiceImpl extends ServiceImpl<VoucherMapper, Voucher> impl
     public Result queryVoucherOfShop(Long shopId) {
         // 1. 查Caffeine本地缓存
         List<Voucher> vouchers = voucherListCache.getIfPresent(shopId);
-        if (vouchers != null) {
-            return Result.ok(vouchers);
-        }
-        // 2. 查Redis
-        String key = CACHE_VOUCHER_LIST_KEY + shopId;
-        String json = stringRedisTemplate.opsForValue().get(key);
-        if (StrUtil.isNotBlank(json)) {
-            vouchers = JSONUtil.toList(json, Voucher.class);
+        if (vouchers == null) {
+            // 2. Redis + MySQL 整体交给 queryListWithPassThrough（自带随机 TTL + 空值防穿透），
+            //    并用 single-flight 合并热点回源；不能只包 DB，否则并发请求依旧各自先打一次 Redis
+            vouchers = singleFlight.run(CACHE_VOUCHER_LIST_KEY + shopId, () -> cacheClient.queryListWithPassThrough(
+                    CACHE_VOUCHER_LIST_KEY, shopId, Voucher.class,
+                    id -> getBaseMapper().queryVoucherOfShop(id),
+                    CACHE_VOUCHER_LIST_TTL, TimeUnit.MINUTES));
+            // 3. 回填Caffeine（返回空列表自然被缓存，无需额外判空返回）
             voucherListCache.put(shopId, vouchers);
-            return Result.ok(vouchers);
         }
-        // 3. 查MySQL
-        vouchers = getBaseMapper().queryVoucherOfShop(shopId);
-        if (vouchers == null || vouchers.isEmpty()) {
-            return Result.ok(Collections.emptyList());
-        }
-        // 4. 回填Redis + Caffeine
-        stringRedisTemplate.opsForValue().set(key, JSONUtil.toJsonStr(vouchers), CACHE_VOUCHER_LIST_TTL, TimeUnit.MINUTES);
-        voucherListCache.put(shopId, vouchers);
         return Result.ok(vouchers);
     }
 
@@ -94,21 +86,36 @@ public class VoucherServiceImpl extends ServiceImpl<VoucherMapper, Voucher> impl
         seckillVoucher.setBeginTime(voucher.getBeginTime());
         seckillVoucher.setEndTime(voucher.getEndTime());
         seckillVoucherService.save(seckillVoucher);
-        outboxWriter.write("VOUCHER", voucher.getId(), "SECKILL_VOUCHER_CREATED",
-                new CacheSyncMessage("VOUCHER", voucher.getId(), voucher.getShopId()));
-        Long voucherId = voucher.getId();
-        Integer stock = voucher.getStock();
-        afterCommit(() -> stringRedisTemplate.opsForValue().set(
-                "seckill:{" + voucherId + "}:stock",
-                stock.toString()));
+        // 秒杀库存预热改为写 outbox：Redis 库存 key 由 VoucherCacheListener 消费时写入，
+        // 携带库存值，失败可对账重试，不再依赖请求线程内的 afterCommit
+        Map<String, Object> data = new HashMap<>();
+        data.put("stock", voucher.getStock());
+        CacheSyncMessage msg = new CacheSyncMessage("VOUCHER", voucher.getId(), voucher.getShopId(),
+                "SECKILL_VOUCHER_CREATED");
+        msg.setData(data);
+        outboxWriter.write("VOUCHER", voucher.getId(), "SECKILL_VOUCHER_CREATED", msg);
     }
 
-    private void afterCommit(Runnable runnable) {
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                runnable.run();
-            }
-        });
+    @Override
+    @Transactional
+    public Result updateVoucher(VoucherDTO dto) {
+        Voucher voucher = BeanUtil.copyProperties(dto, Voucher.class);
+        updateById(voucher);
+        // 列表缓存失效统一由 outbox -> VoucherCacheListener 完成，无需再写 afterCommit
+        outboxWriter.write("VOUCHER", voucher.getId(), "VOUCHER_UPDATED",
+                new CacheSyncMessage("VOUCHER", voucher.getId(), voucher.getShopId(), "VOUCHER_UPDATED"));
+        return Result.ok();
+    }
+
+    @Override
+    @Transactional
+    public Result deleteVoucher(Long id) {
+        Voucher voucher = getById(id);
+        removeById(id);
+        // 列表缓存 + 秒杀库存 key 清理统一由 outbox -> VoucherCacheListener 完成
+        Long shopId = voucher == null ? null : voucher.getShopId();
+        outboxWriter.write("VOUCHER", id, "VOUCHER_DELETED",
+                new CacheSyncMessage("VOUCHER", id, shopId, "VOUCHER_DELETED"));
+        return Result.ok();
     }
 }

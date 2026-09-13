@@ -5,8 +5,10 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.common.constants.RedisConstants;
 import com.hmdp.common.constants.SystemConstants;
+import com.hmdp.common.domain.CacheSyncMessage;
 import com.hmdp.common.domain.Result;
 import com.hmdp.common.domain.UserDTO;
+import com.hmdp.common.outbox.OutboxWriter;
 import com.hmdp.common.utils.UserHolder;
 import com.hmdp.shop.domain.ShopFavorite;
 import com.hmdp.shop.mapper.ShopFavoriteMapper;
@@ -16,11 +18,11 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import javax.annotation.Resource;
 import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -30,12 +32,15 @@ public class ShopFavoriteServiceImpl extends ServiceImpl<ShopFavoriteMapper, Sho
     @Resource
     private StringRedisTemplate stringRedisTemplate;
 
+    @Resource
+    private OutboxWriter outboxWriter;
+
     @Override
     @Transactional
     public Result favorite(Long shopId, Boolean favorite) {
         UserDTO user = UserHolder.getUser();
-        String key = RedisConstants.FAVORITE_SHOP_KEY + user.getId();
-        if (Boolean.TRUE.equals(favorite)) {
+        boolean fav = Boolean.TRUE.equals(favorite);
+        if (fav) {
             ShopFavorite record = new ShopFavorite();
             record.setUserId(user.getId());
             record.setShopId(shopId);
@@ -45,13 +50,19 @@ public class ShopFavoriteServiceImpl extends ServiceImpl<ShopFavoriteMapper, Sho
             } catch (DuplicateKeyException e) {
                 log.debug("already favorited, shopId={}", shopId);
             }
-            afterCommit(() -> stringRedisTemplate.opsForSet().add(key, shopId.toString()));
         } else {
             remove(new QueryWrapper<ShopFavorite>()
                     .eq("user_id", user.getId())
                     .eq("shop_id", shopId));
-            afterCommit(() -> stringRedisTemplate.opsForSet().remove(key, shopId.toString()));
         }
+        // 收藏关系变更写入 outbox：Redis 收藏集合由消费者维护，失败可对账重试
+        Map<String, Object> data = new HashMap<>();
+        data.put("userId", user.getId());
+        data.put("shopId", shopId);
+        data.put("favorite", fav);
+        CacheSyncMessage msg = new CacheSyncMessage("SHOP_FAVORITE", shopId, null, "SHOP_FAVORITE_CHANGED");
+        msg.setData(data);
+        outboxWriter.write("SHOP_FAVORITE", shopId, "SHOP_FAVORITE_CHANGED", msg);
         return Result.ok();
     }
 
@@ -70,14 +81,5 @@ public class ShopFavoriteServiceImpl extends ServiceImpl<ShopFavoriteMapper, Sho
         UserDTO user = UserHolder.getUser();
         String key = RedisConstants.FAVORITE_SHOP_KEY + user.getId();
         return Result.ok(Boolean.TRUE.equals(stringRedisTemplate.opsForSet().isMember(key, shopId.toString())));
-    }
-
-    private void afterCommit(Runnable runnable) {
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                runnable.run();
-            }
-        });
     }
 }

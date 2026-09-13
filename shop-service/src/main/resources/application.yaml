@@ -9,8 +9,11 @@ spring:
     consumer:
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      enable-auto-commit: false
       properties:
         spring.json.trusted.packages: "*"
+    listener:
+      ack-mode: manual_immediate
   jackson:
     default-property-inclusion: non_null
 hmdp:
@@ -21,3 +24,5 @@ hmdp:
   swagger:
     title: 店铺服务接口文档
     package: com.hmdp.shop.controller
+canal:
+  filter: 'hmdp_shop\.business_outbox,hmdp_shop\.tb_shop_type'

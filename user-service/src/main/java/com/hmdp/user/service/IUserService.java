@@ -26,6 +26,11 @@ public interface IUserService extends IService<User> {
 
     void addCreditsByOrder(Long userId);
 
+    /**
+     * 签到积分补偿：由 UserCacheListener 消费 outbox 事件时调用。
+     */
+    void addSignCredits(Long userId);
+
     Result getMe();
 
     Result queryUserInfo(Long userId);

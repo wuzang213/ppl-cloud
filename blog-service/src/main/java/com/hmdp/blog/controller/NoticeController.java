@@ -1,6 +1,7 @@
 package com.hmdp.blog.controller;
 
 import com.hmdp.blog.service.INoticeService;
+import com.hmdp.common.annotation.LoginRequired;
 import com.hmdp.common.domain.Result;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -24,18 +25,21 @@ public class NoticeController {
 
     @Operation(summary = "查询我的消息通知")
     @GetMapping("/list")
+    @LoginRequired
     public Result list(@RequestParam(value = "current", defaultValue = "1") @Parameter(description = "页码") Integer current) {
         return noticeService.listByUser(current);
     }
 
     @Operation(summary = "单条消息标记已读")
     @PutMapping("/read/{id}")
+    @LoginRequired
     public Result read(@PathVariable("id") @Parameter(description = "消息ID") Long id) {
         return noticeService.markRead(id);
     }
 
     @Operation(summary = "全部消息标记已读")
     @PutMapping("/read/all")
+    @LoginRequired
     public Result readAll() {
         return noticeService.markAllRead();
     }

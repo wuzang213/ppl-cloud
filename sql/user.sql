@@ -63,4 +63,12 @@ create table tb_user_info
 )
     row_format = COMPACT;
 
+CREATE TABLE IF NOT EXISTS outbox_consume_record (
+                                                     message_id   VARCHAR(128) NOT NULL COMMENT '消息唯一键，格式 outbox:{outboxId}',
+    created_time DATETIME     NOT NULL COMMENT '记录写入时间，超期由清理任务删除',
+    PRIMARY KEY (message_id)
+    ) ENGINE = InnoDB
+    DEFAULT CHARSET = utf8mb4 COMMENT 'outbox 消费幂等表';
+
+
 

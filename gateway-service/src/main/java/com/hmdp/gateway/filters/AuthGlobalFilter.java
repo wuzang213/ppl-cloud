@@ -40,9 +40,10 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
     private final JwtUtils jwtUtils;
     private final AntPathMatcher antPathMatcher = new AntPathMatcher();
 
+    // Caffeine TTL 从 60 秒降至 10 秒，降低 kickAllDevices 后旧 token 可用窗口
     private final Cache<Long, Integer> tokenVersionCache = Caffeine.newBuilder()
             .maximumSize(10_000)
-            .expireAfterWrite(60, TimeUnit.SECONDS)
+            .expireAfterWrite(10, TimeUnit.SECONDS)
             .build();
 
     @Override
@@ -80,7 +81,12 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
                         .get(TOKEN_VERSION_KEY + userId)
                         .map(Integer::valueOf)
                         .defaultIfEmpty(-1)
-                        .doOnNext(version -> tokenVersionCache.put(userId, version))
+                        // 不缓存 -1（Redis 不可用时返回 -1 拒绝，但不缓存，Redis 恢复后立即可用）
+                        .doOnNext(version -> {
+                            if (version != -1) {
+                                tokenVersionCache.put(userId, version);
+                            }
+                        })
                         .onErrorResume(e -> {
                             log.warn("获取 tokenVersion 失败，按鉴权失败处理，userId={}", userId, e);
                             return Mono.just(-1);
@@ -92,16 +98,18 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
                     return unauthorized(exchange);
                 }
                 ServerHttpRequest.Builder builder = request.mutate();
+                // 先清洗客户端可能伪造的敏感 header，防止下游拿到伪造的 user-info
+                builder.headers(h -> {
+                    h.remove("user-info");
+                    h.remove("user-role");
+                    h.remove("user-nickname");
+                    h.remove("user-icon");
+                });
                 builder.header("user-info", userId.toString());
                 if (claims.get("role", String.class) != null) {
                     builder.header("user-role", claims.get("role", String.class));
                 }
-                if (claims.get("nickName", String.class) != null) {
-                    builder.header("user-nickname", claims.get("nickName", String.class));
-                }
-                if (claims.get("icon", String.class) != null) {
-                    builder.header("user-icon", claims.get("icon", String.class));
-                }
+                // JWT 不再携带 nickName/icon，网关不再透传这两个可变 header
                 return chain.filter(exchange.mutate().request(builder.build()).build());
             });
         } catch (Exception e) {

@@ -15,7 +15,7 @@ public class JwtProperties {
 
     private String keyStoreAlias = "你的密钥别名";
 
-    private long accessTtlMinutes = 15L;
+    private long accessTtlMinutes = 60L;
 
     private long refreshTtlDays = 7L;
 }

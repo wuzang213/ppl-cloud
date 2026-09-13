@@ -10,6 +10,11 @@ public interface MqConstants {
     String SECKILL_ORDER_QUEUE = "seckill.order.queue";
     String SECKILL_ORDER_ROUTING_KEY = "seckill.order";
 
+    // 秒杀订单死信交换机 + 死信队列（重试耗尽后进入死信，补偿 Redis 库存）
+    String SECKILL_DLX_EXCHANGE = "seckill.dlx";
+    String SECKILL_ORDER_DEAD_QUEUE = "seckill.order.dead.queue";
+    String SECKILL_ORDER_DEAD_ROUTING_KEY = "seckill.order.dead";
+
     // ========== 博客点赞 Direct 队列 ==========
     String BLOG_LIKE_DIRECT_EXCHANGE = "blog.like.direct";
     String BLOG_LIKE_QUEUE = "blog.like.queue";

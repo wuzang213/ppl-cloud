@@ -10,6 +10,8 @@ public final class UserConstants {
     public static final String PHONE_PASSWORD_INVALID = "手机号或密码格式错误";
     public static final String TOKEN_INVALID = "登录状态已失效，请重新登录";
     public static final String REFRESH_TOKEN_INVALID = "刷新令牌无效或已过期";
+    /** 短信验证码发送过于频繁 */
+    public static final String CODE_SEND_TOO_FREQUENT = "验证码发送过于频繁，请稍后再试";
 
     // 默认积分、等级、签到积分、订单积分、等级提升积分
     public static final int DEFAULT_CREDITS = 0;

@@ -1,31 +1,42 @@
 package com.hmdp.shop.task;
 
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.hmdp.common.domain.ViewCountMessage;
-import com.hmdp.shop.domain.Shop;
-import com.hmdp.shop.mapper.ShopMapper;
+import com.hmdp.shop.service.impl.ShopViewCountService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Component;
 
 /**
- * 消费 Kafka 浏览量消息，批量更新 MySQL。
+ * 消费 Kafka 店铺浏览量消息，幂等地累加到 MySQL。
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class ShopViewConsumer {
 
-    private final ShopMapper shopMapper;
+    private final ShopViewCountService shopViewCountService;
 
     @KafkaListener(topics = "shop-view-count", groupId = "shop-view-count-group")
-    public void onViewCount(ViewCountMessage message) {
+    public void onViewCount(ConsumerRecord<String, ViewCountMessage> record, Acknowledgment ack) {
+        ViewCountMessage message = record.value();
         if (message == null || message.getBizId() == null || message.getCount() == null) {
+            // 脏消息重试多少次都不会变好，直接 ack 跳过，避免堵住分区
+            log.warn("浏览量消息内容非法，已跳过: topic={}, partition={}, offset={}",
+                    record.topic(), record.partition(), record.offset());
+            ack.acknowledge();
             return;
         }
-        shopMapper.update(null, new LambdaUpdateWrapper<Shop>()
-                .eq(Shop::getId, message.getBizId())
-                .setSql("view_count = view_count + " + message.getCount()));
+        // 幂等登记 + view_count 累加在同一事务内完成，事务提交之后才 ack 提交 offset
+        boolean applied = shopViewCountService.applyOnce(
+                record.topic(), record.partition(), record.offset(),
+                message.getBizId(), message.getCount());
+        if (!applied) {
+            log.info("浏览量消息重复投递，已幂等跳过: topic={}, partition={}, offset={}, shopId={}",
+                    record.topic(), record.partition(), record.offset(), message.getBizId());
+        }
+        ack.acknowledge();
     }
 }

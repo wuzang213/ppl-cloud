@@ -29,4 +29,8 @@ public interface IBlogService extends IService<Blog> {
     Result queryBlogByShopId(Long shopId, Integer current);
 
     Result queryBlogPage(Integer current, Integer size);
+
+    Result updateBlog(BlogDTO dto);
+
+    Result deleteBlog(Long id);
 }

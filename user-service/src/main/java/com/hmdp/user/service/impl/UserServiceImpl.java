@@ -8,6 +8,8 @@ import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 
 import com.hmdp.common.domain.Result;
+import com.hmdp.common.domain.CacheSyncMessage;
+import com.hmdp.common.outbox.OutboxWriter;
 import com.hmdp.common.utils.RegexUtils;
 import com.hmdp.common.utils.PasswordEncoder;
 import com.hmdp.common.exception.BadRequestException;
@@ -27,12 +29,14 @@ import com.hmdp.user.service.IUserInfoService;
 import com.hmdp.user.service.IUserService;
 import lombok.extern.slf4j.Slf4j;
 
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.connection.BitFieldSubCommands;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpSession;
@@ -40,6 +44,8 @@ import javax.servlet.http.HttpSession;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -65,6 +71,53 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     @Resource
     private JwtProperties jwtProperties;
 
+    @Resource
+    private Environment environment;
+
+    @Resource
+    private OutboxWriter outboxWriter;
+
+    // ===== Lua 脚本（原子校验/删除双向索引，替代 keys()）=====
+
+    /**
+     * refreshToken 校验 + 原子删除双向索引。
+     * REFRESH_TOKEN_KEY 的 value 格式为 "refreshToken:tokenVersion"。
+     * 返回空串表示校验失败，返回 version 字符串表示成功且已删除。
+     * KEYS[1]=正向key(login:refresh:{uid}:{deviceId})  KEYS[2]=反向key(login:refresh:index:{refreshToken})
+     * ARGV[1]=提交的 refreshToken
+     */
+    private static final DefaultRedisScript<String> REFRESH_VALIDATE_SCRIPT;
+
+    /**
+     * logout 原子删除双向索引。
+     * KEYS[1]=反向key  ARGV[1]=REFRESH_TOKEN_KEY 前缀
+     * 返回 1 删除成功，0 反向 key 不存在。
+     */
+    private static final DefaultRedisScript<Long> LOGOUT_SCRIPT;
+
+    /**
+     * kickAllDevices 原子删除所有设备的双向索引 + 设备集合。
+     * KEYS[1]=设备集合key(login:devices:{userId})
+     * ARGV[1]=REFRESH_TOKEN_KEY 前缀  ARGV[2]=REFRESH_INDEX_KEY 前缀  ARGV[3]=userId
+     * 返回删除的设备数。
+     */
+    private static final DefaultRedisScript<Long> KICK_ALL_SCRIPT;
+
+    static {
+        REFRESH_VALIDATE_SCRIPT = new DefaultRedisScript<>();
+        REFRESH_VALIDATE_SCRIPT.setLocation(new ClassPathResource("refresh_validate.lua"));
+        REFRESH_VALIDATE_SCRIPT.setResultType(String.class);
+
+        LOGOUT_SCRIPT = new DefaultRedisScript<>();
+        LOGOUT_SCRIPT.setLocation(new ClassPathResource("logout.lua"));
+        LOGOUT_SCRIPT.setResultType(Long.class);
+
+        KICK_ALL_SCRIPT = new DefaultRedisScript<>();
+        KICK_ALL_SCRIPT.setLocation(new ClassPathResource("kick_all_devices.lua"));
+        KICK_ALL_SCRIPT.setResultType(Long.class);
+    }
+
+
     @Override
     public Result sendCode(String phone, HttpSession session) {
         // 1.校验手机号
@@ -72,13 +125,26 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
             // 2.如果不符合，返回错误信息
             throw new BadRequestException(UserConstants.PHONE_INVALID);
         }
+        // 手机号 60 秒冷却防刷
+        String coolKey = LOGIN_CODE_COOL_KEY + phone;
+        Boolean cooled = stringRedisTemplate.hasKey(coolKey);
+        if (Boolean.TRUE.equals(cooled)) {
+            throw new BadRequestException(UserConstants.CODE_SEND_TOO_FREQUENT);
+        }
         // 3.符合，生成验证码
         String code = RandomUtil.randomNumbers(6);
 
         // 4.保存验证码到 redis    // set key value ex 120
-        stringRedisTemplate.opsForValue().set(LOGIN_CODE_KEY + phone,code,LOGIN_CODE_TTL, TimeUnit.MINUTES);
+        stringRedisTemplate.opsForValue().set(LOGIN_CODE_KEY + phone, code, LOGIN_CODE_TTL, TimeUnit.MINUTES);
+        // 设置 60 秒冷却
+        stringRedisTemplate.opsForValue().set(coolKey, "1", 60, TimeUnit.SECONDS);
         // 5.发送验证码
-        log.debug("发送短信验证码成功，验证码：{}", code);
+        // 仅开发环境打印验证码（未接入真实短信平台），生产环境只记录脱敏手机号
+        if (environment.acceptsProfiles(Profiles.of("dev"))) {
+            log.info("开发环境验证码：{}", code);
+        } else {
+            log.debug("发送短信验证码成功，手机号：{}", phone.substring(0, 3) + "****" + phone.substring(7));
+        }
         // 返回ok
         return Result.ok();
     }
@@ -126,11 +192,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     @Override
     public Result logout(String refreshToken) {
         if (StrUtil.isNotBlank(refreshToken)) {
-            String uidDevice = stringRedisTemplate.opsForValue().get(REFRESH_INDEX_KEY + refreshToken);
-            if (StrUtil.isNotBlank(uidDevice)) {
-                stringRedisTemplate.delete(REFRESH_TOKEN_KEY + uidDevice);
-                stringRedisTemplate.delete(REFRESH_INDEX_KEY + refreshToken);
-            }
+            // Bug #5：Lua 原子删除双向索引，避免分步删除在异常/并发下残留脏数据
+            stringRedisTemplate.execute(LOGOUT_SCRIPT,
+                    Collections.singletonList(REFRESH_INDEX_KEY + refreshToken),
+                    REFRESH_TOKEN_KEY);
         }
         log.info("logout, refreshToken: {}", refreshToken);
         UserHolder.removeUser();
@@ -152,12 +217,22 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         }
         Long userId = Long.valueOf(parts[0]);
         String deviceId = parts[1];
-        String oldKey = REFRESH_TOKEN_KEY + uidDevice;
-        if (!refreshToken.equals(stringRedisTemplate.opsForValue().get(oldKey))) {
+
+        // Lua 原子校验+删除双向索引（一次往返，防并发重用旧 refreshToken）
+        // 脚本返回签发时的 tokenVersion，与 DB 当前版本比对，防止踢人/改密码后旧 refreshToken 刷出新 token
+        String issuedVersion = stringRedisTemplate.execute(REFRESH_VALIDATE_SCRIPT,
+                Arrays.asList(REFRESH_TOKEN_KEY + uidDevice, REFRESH_INDEX_KEY + refreshToken),
+                refreshToken);
+        if (StrUtil.isBlank(issuedVersion)) {
             throw new UnauthorizedException(UserConstants.REFRESH_TOKEN_INVALID);
         }
-        stringRedisTemplate.delete(oldKey);
-        stringRedisTemplate.delete(REFRESH_INDEX_KEY + refreshToken);
+
+        // tokenVersion 校验——DB 版本号与签发版本号不一致说明期间执行过踢人/改密码，拒绝刷新
+        Integer dbVersion = getTokenVersion(userId);
+        if (!dbVersion.toString().equals(issuedVersion)) {
+            throw new UnauthorizedException(UserConstants.TOKEN_INVALID);
+        }
+
         User user = getById(userId);
         if (user == null) {
             throw new UnauthorizedException(UserConstants.TOKEN_INVALID);
@@ -166,6 +241,11 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         return Result.ok(createToken(userDTO, deviceId));
     }
 
+    /**
+     *
+     * 强制下线所有设备
+     * @return
+     */
     @Override
     public Result kickAllDevices() {
         Long userId = UserHolder.getUser().getId();
@@ -174,10 +254,11 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         stringRedisTemplate.opsForValue().set(
                 TOKEN_VERSION_KEY + userId, version.toString(),
                 jwtProperties.getRefreshTtlDays(), TimeUnit.DAYS);
-        Set<String> refreshKeys = stringRedisTemplate.keys(REFRESH_TOKEN_KEY + userId + ":*");
-        if (refreshKeys != null && !refreshKeys.isEmpty()) {
-            stringRedisTemplate.delete(refreshKeys);
-        }
+        // Lua 脚本 SMEMBERS + 遍历原子删除双向索引，替代 keys() 全库扫描
+        // 精确删除正向+反向索引，无残留脏数据，不阻塞 Redis 单线程
+        stringRedisTemplate.execute(KICK_ALL_SCRIPT,
+                Collections.singletonList(LOGIN_DEVICES_KEY + userId),
+                REFRESH_TOKEN_KEY, REFRESH_INDEX_KEY, userId.toString());
         return Result.ok();
     }
 
@@ -220,8 +301,13 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         }
         // 7. 设置 Key 过期时间（保留35天，覆盖所有签到周期）
         stringRedisTemplate.expire(key, Duration.ofDays(35));
-        // 8. 增加积分
-        afterCommit(() -> addCredits(userId, UserConstants.SIGN_CREDITS));
+        // 8. 增加积分：写 outbox，由 UserCacheListener 消费时执行积分累加，
+        //    有记录可对账重试，不再依赖请求线程内的 afterCommit（失败即丢失）
+        Map<String, Object> data = new HashMap<>();
+        data.put("signDate", signDate.format(DateTimeFormatter.ofPattern("yyyyMMdd")));
+        CacheSyncMessage creditsMsg = new CacheSyncMessage("USER", userId, null, "USER_SIGNED");
+        creditsMsg.setData(data);
+        outboxWriter.write("USER", userId, "USER_SIGNED", creditsMsg);
         return Result.ok();
     }
 
@@ -291,22 +377,28 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         }
         //读取数据库用户的token_version
         Integer version = getTokenVersion(userDTO.getId());
-        // 调用JwtUtils，RSA‑RS256签发accessToken，载荷携带userId、tokenVersion、deviceId、角色、昵称头像
-        String accessToken = jwtUtils.createAccessToken(userDTO.getId(), version, deviceId, userDTO.getRole(), userDTO.getNickName(), userDTO.getIcon());
+        // JWT 只携带不可变/安全字段，去掉 nickName/icon（改名后 JWT 无法更新，下游会拿到过期值）
+        String accessToken = jwtUtils.createAccessToken(userDTO.getId(), version, deviceId, userDTO.getRole());
         String refreshToken = deviceId + "." + UUID.randomUUID().toString(true);
         String uidDevice = userDTO.getId() + ":" + deviceId;
+        // 正向索引 value 改为 "refreshToken:tokenVersion"，刷新时取出版本号与 DB 比对
+        String tokenWithValue = refreshToken + ":" + version;
         // Redis维护两套索引
         // 1. REFRESH_INDEX_KEY: refreshToken → "userId:deviceId"
         stringRedisTemplate.opsForValue().set(
                 REFRESH_INDEX_KEY + refreshToken, uidDevice,
                 jwtProperties.getRefreshTtlDays(), TimeUnit.DAYS);
-        // 2. REFRESH_TOKEN_KEY: "userId:deviceId" → refreshToken，用于踢设备的时候批量删除
+        // 2. REFRESH_TOKEN_KEY: "userId:deviceId" → "refreshToken:tokenVersion"，用于踢设备时批量删除
         stringRedisTemplate.opsForValue().set(
-                REFRESH_TOKEN_KEY + uidDevice, refreshToken,
+                REFRESH_TOKEN_KEY + uidDevice, tokenWithValue,
                 jwtProperties.getRefreshTtlDays(), TimeUnit.DAYS);
         // 3. TOKEN_VERSION_KEY：保存用户当前token版本号，网关鉴权要比对
         stringRedisTemplate.opsForValue().set(
                 TOKEN_VERSION_KEY + userDTO.getId(), version.toString(),
+                jwtProperties.getRefreshTtlDays(), TimeUnit.DAYS);
+        // 维护用户设备集合，kickAllDevices 用 SMEMBERS 替代 keys() 全库扫描
+        stringRedisTemplate.opsForSet().add(LOGIN_DEVICES_KEY + userDTO.getId(), deviceId);
+        stringRedisTemplate.expire(LOGIN_DEVICES_KEY + userDTO.getId(),
                 jwtProperties.getRefreshTtlDays(), TimeUnit.DAYS);
         return new TokenPair(accessToken, refreshToken, version);
     }
@@ -317,15 +409,6 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     }
 
     // 增加积分
-    private void afterCommit(Runnable runnable) {
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                runnable.run();
-            }
-        });
-    }
-
     private void addCredits(Long userId, int credits) {
         UserInfo info = userInfoService.getById(userId);
         if (info == null) {
@@ -376,6 +459,11 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     @Override
     public void addCreditsByOrder(Long userId) {
         addCredits(userId, UserConstants.ORDER_CREDITS);
+    }
+
+    @Override
+    public void addSignCredits(Long userId) {
+        addCredits(userId, UserConstants.SIGN_CREDITS);
     }
 
     private int calcLevel(int credits) {

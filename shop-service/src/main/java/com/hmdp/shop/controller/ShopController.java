@@ -1,5 +1,6 @@
 package com.hmdp.shop.controller;
 
+import com.hmdp.common.annotation.LoginRequired;
 import com.hmdp.common.domain.Result;
 import com.hmdp.shop.domain.Shop;
 import com.hmdp.shop.domain.ShopDTO;
@@ -7,6 +8,7 @@ import com.hmdp.shop.service.IShopService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -42,6 +44,13 @@ public class ShopController {
     @PutMapping
     public Result updateShop(@RequestBody ShopDTO dto) {
         return shopService.update(dto);
+    }
+
+    @Operation(summary = "删除店铺")
+    @DeleteMapping("/{id}")
+    @LoginRequired
+    public Result deleteShop(@PathVariable("id") @Parameter(description = "店铺ID") Long id) {
+        return shopService.deleteShop(id);
     }
 
     @Operation(summary = "按类型和坐标查询店铺")

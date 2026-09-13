@@ -1,10 +1,7 @@
 package com.hmdp.blog.listener;
 
-import com.hmdp.blog.constants.BlogConstants;
 import com.hmdp.blog.domain.BlogLikeMessage;
 import com.hmdp.common.constants.MqConstants;
-import com.hmdp.common.domain.NoticeMessage;
-import com.hmdp.common.utils.RabbitMqHelper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.Argument;
 import org.springframework.amqp.rabbit.annotation.Exchange;
@@ -19,7 +16,13 @@ import javax.annotation.Resource;
 import static com.hmdp.common.constants.RedisConstants.BLOG_LIKED_KEY;
 
 /**
- * 博文点赞消息监听器
+ * 博文点赞消息监听器。
+ * <p>
+ * 只负责维护点赞关系的 Redis ZSet。点赞通知已由 {@code BlogServiceImpl.likeBlog}
+ * 直接写入第二条 outbox 事件（{@code BLOG_NOTICE} → notice.direct）投递，
+ * 与 {@code FollowServiceImpl.follow} 的 {@code FOLLOW_NOTICE} 写法对称，此处不再二次转发。
+ * <p>
+ * 无需 messageId 幂等去重：ZSet 的 add / remove 本身幂等，重复消费结果一致。
  */
 @Slf4j
 @Component
@@ -27,9 +30,6 @@ public class BlogLikeListener {
 
     @Resource
     private StringRedisTemplate stringRedisTemplate;
-
-    @Resource
-    private RabbitMqHelper rabbitMqHelper;
 
     @RabbitListener(bindings = @QueueBinding(
             value = @Queue(name = MqConstants.BLOG_LIKE_QUEUE, durable = "true",
@@ -47,15 +47,6 @@ public class BlogLikeListener {
             stringRedisTemplate.opsForZSet().add(key, message.getUserId().toString(), System.currentTimeMillis());
         } else {
             stringRedisTemplate.opsForZSet().remove(key, message.getUserId().toString());
-        }
-        // 发送点赞通知消息
-        if (Boolean.TRUE.equals(message.getLiked()) && message.getToUserId() != null
-                && !message.getToUserId().equals(message.getUserId())) {
-            rabbitMqHelper.sendMessageWithConfirm(
-                    MqConstants.NOTICE_DIRECT_EXCHANGE,
-                    MqConstants.NOTICE_ROUTING_KEY,
-                    new NoticeMessage(message.getToUserId(), BlogConstants.NOTICE_TYPE_LIKE, BlogConstants.NOTICE_LIKE_CONTENT, message.getBlogId()),
-                    MqConstants.MQ_RETRY_TIMES);
         }
         log.debug("sync blog like to redis, blogId={}, userId={}, liked={}",
                 message.getBlogId(), message.getUserId(), message.getLiked());

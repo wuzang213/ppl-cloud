@@ -29,7 +29,12 @@ public class VoucherOrderListener {
             value = @Queue(
                     name = MqConstants.SECKILL_ORDER_QUEUE,
                     durable = "true",
-                    arguments = @Argument(name = "x-queue-mode", value = "lazy")
+                    arguments = {
+                            @Argument(name = "x-queue-mode", value = "lazy"),
+                            // 配置死信交换机，重试耗尽后消息自动进入死信队列
+                            @Argument(name = "x-dead-letter-exchange", value = MqConstants.SECKILL_DLX_EXCHANGE),
+                            @Argument(name = "x-dead-letter-routing-key", value = MqConstants.SECKILL_ORDER_DEAD_ROUTING_KEY)
+                    }
             ),
             exchange = @Exchange(name = MqConstants.SECKILL_DIRECT_EXCHANGE, type = "direct"),
             key = MqConstants.SECKILL_ORDER_ROUTING_KEY

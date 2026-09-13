@@ -13,13 +13,11 @@ import com.hmdp.common.domain.NoticeMessage;
 import com.hmdp.common.exception.ForbiddenException;
 import com.hmdp.common.domain.Result;
 import com.hmdp.common.domain.UserDTO;
-import com.hmdp.common.utils.RabbitMqHelper;
+import com.hmdp.common.outbox.OutboxWriter;
 import com.hmdp.common.constants.SystemConstants;
 import com.hmdp.common.utils.UserHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import javax.annotation.Resource;
 
@@ -31,7 +29,7 @@ public class BlogCommentsServiceImpl extends ServiceImpl<BlogCommentsMapper, Blo
     private BlogMapper blogMapper;
 
     @Resource
-    private RabbitMqHelper rabbitMqHelper;
+    private OutboxWriter outboxWriter;
 
     @Override
     @Transactional
@@ -45,12 +43,12 @@ public class BlogCommentsServiceImpl extends ServiceImpl<BlogCommentsMapper, Blo
         Blog blog = blogMapper.selectById(comment.getBlogId());
         // 4.博客存在 并且 评论人 != 博客作者
         if (blog != null && !blog.getUserId().equals(user.getId())) {
-            afterCommit(() -> rabbitMqHelper.sendMessageWithConfirm(
-                    MqConstants.NOTICE_DIRECT_EXCHANGE,
-                    MqConstants.NOTICE_ROUTING_KEY,
-                    new NoticeMessage(blog.getUserId(), BlogConstants.NOTICE_TYPE_COMMENT,
-                            BlogConstants.NOTICE_COMMENT_CONTENT, comment.getBlogId()),
-                    MqConstants.MQ_RETRY_TIMES));
+            // 评论通知改为写 outbox：由 Canal + MQ 可靠投递到通知交换机，
+            // 有记录可对账重试，不再依赖请求线程内的 afterCommit（失败即丢失）
+            NoticeMessage notice = new NoticeMessage(blog.getUserId(), BlogConstants.NOTICE_TYPE_COMMENT,
+                    BlogConstants.NOTICE_COMMENT_CONTENT, comment.getBlogId());
+            outboxWriter.write("BLOG_COMMENT", comment.getId(), "COMMENT_NOTICE",
+                    MqConstants.NOTICE_DIRECT_EXCHANGE, MqConstants.NOTICE_ROUTING_KEY, notice);
         }
         return Result.ok(comment.getId());
     }
@@ -72,14 +70,5 @@ public class BlogCommentsServiceImpl extends ServiceImpl<BlogCommentsMapper, Blo
         }
         removeById(id);
         return Result.ok();
-    }
-
-    private void afterCommit(Runnable runnable) {
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                runnable.run();
-            }
-        });
     }
 }

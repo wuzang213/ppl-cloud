@@ -2,33 +2,35 @@ package com.hmdp.common.utils;
 
 
 import cn.hutool.core.util.RandomUtil;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.util.DigestUtils;
 
 import java.nio.charset.StandardCharsets;
 
 public class PasswordEncoder {
+    private final static BCryptPasswordEncoder ENCODER = new BCryptPasswordEncoder();
 
+    /**
+     * 加密密码
+     * @param password
+     * @return
+     */
     public static String encode(String password) {
-        // 生成盐
-        String salt = RandomUtil.randomString(20);
-        // 加密
-        return encode(password,salt);
+        if (password == null) {
+            throw new IllegalArgumentException("密码不能为空");
+        }
+        return ENCODER.encode(password);
     }
-    private static String encode(String password, String salt) {
-        // 加密
-        return salt + "@" + DigestUtils.md5DigestAsHex((password + salt).getBytes(StandardCharsets.UTF_8));
-    }
+
     public static Boolean matches(String encodedPassword, String rawPassword) {
         if (encodedPassword == null || rawPassword == null) {
             return false;
         }
-        if(!encodedPassword.contains("@")){
-            throw new RuntimeException("密码格式不正确！");
+        try {
+            return ENCODER.matches(rawPassword, encodedPassword);
+        } catch (IllegalArgumentException e) {
+            // 格式不合法（比如脏数据），安静返回 false，不抛异常
+            return false;
         }
-        String[] arr = encodedPassword.split("@");
-        // 获取盐
-        String salt = arr[0];
-        // 比较
-        return encodedPassword.equals(encode(rawPassword, salt));
     }
 }

@@ -1,5 +1,6 @@
 package com.hmdp.shop.controller;
 
+import com.hmdp.common.annotation.LoginRequired;
 import com.hmdp.common.domain.Result;
 import com.hmdp.shop.service.IShopFavoriteService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -24,6 +25,7 @@ public class ShopFavoriteController {
 
     @Operation(summary = "收藏或取消收藏店铺")
     @PutMapping("/{shopId}")
+    @LoginRequired
     public Result favorite(@PathVariable("shopId") @Parameter(description = "店铺ID") Long shopId,
                            @RequestParam("favorite") @Parameter(description = "是否收藏") Boolean favorite) {
         return favoriteService.favorite(shopId, favorite);
@@ -31,12 +33,14 @@ public class ShopFavoriteController {
 
     @Operation(summary = "查询我的收藏店铺")
     @GetMapping("/list")
+    @LoginRequired
     public Result list(@RequestParam(value = "current", defaultValue = "1") @Parameter(description = "页码") Integer current) {
         return favoriteService.myFavorites(current);
     }
 
     @Operation(summary = "查询店铺收藏状态")
     @GetMapping("/status/{shopId}")
+    @LoginRequired
     public Result status(@PathVariable("shopId") @Parameter(description = "店铺ID") Long shopId) {
         return favoriteService.isFavorite(shopId);
     }

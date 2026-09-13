@@ -14,8 +14,11 @@ spring:
     consumer:
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      enable-auto-commit: false
       properties:
         spring.json.trusted.packages: "*"
+    listener:
+      ack-mode: manual_immediate
   jackson:
     default-property-inclusion: non_null
   servlet:
@@ -37,3 +40,5 @@ feign:
     enabled: true # 开启okhttp
   sentinel:
     enabled: true # 开启feign对sentinel的支持
+canal:
+  filter: 'hmdp_blog\.business_outbox'

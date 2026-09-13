@@ -33,7 +33,12 @@ public class JwtUtils {
         }
     }
 
-    public String createAccessToken(Long userId, Integer tokenVersion, String deviceId, String role, String nickName, String icon) {
+    /**
+     * 签发 accessToken。
+     * 修复：JWT 只携带不可变/安全字段（userId、tokenVersion、deviceId、role），
+     * 不再放 nickName、icon 等可变业务字段——改名后 JWT 无法更新，下游会拿到过期值。
+     */
+    public String createAccessToken(Long userId, Integer tokenVersion, String deviceId, String role) {
         Date now = new Date();
         long ttlMs = properties.getAccessTtlMinutes() * 60_000L;
         return Jwts.builder()
@@ -42,8 +47,6 @@ public class JwtUtils {
                 .claim("tokenVersion", tokenVersion)
                 .claim("deviceId", deviceId)
                 .claim("role", role)
-                .claim("nickName", nickName)
-                .claim("icon", icon)
                 .setIssuedAt(now)
                 .setExpiration(new Date(now.getTime() + ttlMs))
                 .signWith(privateKey, SignatureAlgorithm.RS256)

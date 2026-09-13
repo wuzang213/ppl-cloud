@@ -8,19 +8,21 @@ import com.hmdp.blog.mapper.BlogFavoriteMapper;
 import com.hmdp.blog.service.IBlogFavoriteService;
 import com.hmdp.common.constants.RedisConstants;
 import com.hmdp.common.constants.SystemConstants;
+import com.hmdp.common.domain.CacheSyncMessage;
 import com.hmdp.common.domain.Result;
 import com.hmdp.common.domain.UserDTO;
+import com.hmdp.common.outbox.OutboxWriter;
 import com.hmdp.common.utils.UserHolder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import javax.annotation.Resource;
 import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -30,12 +32,15 @@ public class BlogFavoriteServiceImpl extends ServiceImpl<BlogFavoriteMapper, Blo
     @Resource
     private StringRedisTemplate stringRedisTemplate;
 
+    @Resource
+    private OutboxWriter outboxWriter;
+
     @Override
     @Transactional
     public Result favorite(Long blogId, Boolean favorite) {
         UserDTO user = UserHolder.getUser();
-        String key = RedisConstants.FAVORITE_BLOG_KEY + user.getId();
-        if (Boolean.TRUE.equals(favorite)) {
+        boolean fav = Boolean.TRUE.equals(favorite);
+        if (fav) {
             BlogFavorite favoriteRecord = new BlogFavorite();
             favoriteRecord.setUserId(user.getId());
             favoriteRecord.setBlogId(blogId);
@@ -45,13 +50,19 @@ public class BlogFavoriteServiceImpl extends ServiceImpl<BlogFavoriteMapper, Blo
             } catch (DuplicateKeyException e) {
                 log.debug("already favorited, blogId={}", blogId);
             }
-            afterCommit(() -> stringRedisTemplate.opsForSet().add(key, blogId.toString()));
         } else {
             remove(new QueryWrapper<BlogFavorite>()
                     .eq("user_id", user.getId())
                     .eq("blog_id", blogId));
-            afterCommit(() -> stringRedisTemplate.opsForSet().remove(key, blogId.toString()));
         }
+        // 收藏关系变更写入 outbox：Redis 收藏集合由消费者维护，失败可对账重试
+        Map<String, Object> data = new HashMap<>();
+        data.put("userId", user.getId());
+        data.put("blogId", blogId);
+        data.put("favorite", fav);
+        CacheSyncMessage msg = new CacheSyncMessage("BLOG_FAVORITE", blogId, null, "BLOG_FAVORITE_CHANGED");
+        msg.setData(data);
+        outboxWriter.write("BLOG_FAVORITE", blogId, "BLOG_FAVORITE_CHANGED", msg);
         return Result.ok();
     }
 
@@ -70,14 +81,5 @@ public class BlogFavoriteServiceImpl extends ServiceImpl<BlogFavoriteMapper, Blo
         UserDTO user = UserHolder.getUser();
         String key = RedisConstants.FAVORITE_BLOG_KEY + user.getId();
         return Result.ok(Boolean.TRUE.equals(stringRedisTemplate.opsForSet().isMember(key, blogId.toString())));
-    }
-
-    private void afterCommit(Runnable runnable) {
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                runnable.run();
-            }
-        });
     }
 }

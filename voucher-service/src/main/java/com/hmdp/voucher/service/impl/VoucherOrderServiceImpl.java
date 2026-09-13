@@ -5,9 +5,11 @@ import static com.hmdp.common.constants.MqConstants.SECKILL_ORDER_ROUTING_KEY;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 
+import com.hmdp.common.domain.CacheSyncMessage;
 import com.hmdp.common.domain.Result;
 import com.hmdp.common.domain.OrderPaidMessage;
 import com.hmdp.common.domain.UserDTO;
+import com.hmdp.common.outbox.OutboxWriter;
 import com.hmdp.common.utils.RabbitMqHelper;
 import com.hmdp.common.utils.RedisIdWorker;
 import com.hmdp.common.constants.MqConstants;
@@ -28,12 +30,12 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import javax.annotation.Resource;
 import java.time.LocalDateTime;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 @Service
 @Slf4j
@@ -46,6 +48,8 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     private StringRedisTemplate stringRedisTemplate;
     @Resource
     private RabbitMqHelper rabbitMqHelper;
+    @Resource
+    private OutboxWriter outboxWriter;
 
     private static final DefaultRedisScript<Long> SECKILL_SCRIPT;
     static {
@@ -64,6 +68,10 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
                 Collections.emptyList(),
                 voucherId.toString(), userId.toString()
         );
+        if (result == null) {
+            throw new BadRequestException("下单失败，请重试");
+        }
+
         int r = result.intValue();
         // 2.判断结果是否为0
         if (r != 0) {
@@ -109,11 +117,11 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         if (!saved) {
             throw new RuntimeException("order save failed, voucherId=" + voucherOrder.getVoucherId());
         }
-        afterCommit(() -> rabbitMqHelper.sendDelayMessage(
-                MqConstants.SECKILL_DIRECT_EXCHANGE,
-                MqConstants.ORDER_TIMEOUT_ROUTING_KEY,
-                voucherOrder.getId(),
-                VoucherConstants.ORDER_TIMEOUT_DELAY_MS));
+        // 订单超时延迟消息改为写 outbox：由 Canal + MQ 延迟投递，
+        // 有记录可对账重试，不再依赖请求线程内的 afterCommit（失败即丢失）
+        outboxWriter.write("VOUCHER_ORDER", voucherOrder.getId(), "ORDER_TIMEOUT_SCHEDULED",
+                SECKILL_DIRECT_EXCHANGE, MqConstants.ORDER_TIMEOUT_ROUTING_KEY,
+                VoucherConstants.ORDER_TIMEOUT_DELAY_MS, voucherOrder.getId());
         return true;
     }
 
@@ -158,11 +166,10 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
                 .set("status", OrderStatus.PAID.getValue())
                 .set("pay_time", LocalDateTime.now())
                 .update();
-        afterCommit(() -> rabbitMqHelper.sendMessageWithConfirm(
-                MqConstants.SECKILL_DIRECT_EXCHANGE,
-                MqConstants.ORDER_PAID_ROUTING_KEY,
-                new OrderPaidMessage(order.getUserId(), id),
-                MqConstants.MQ_RETRY_TIMES));
+        // 支付成功消息改为写 outbox：可靠投递到用户积分队列，失败可对账重试
+        outboxWriter.write("VOUCHER_ORDER", id, "ORDER_PAID",
+                SECKILL_DIRECT_EXCHANGE, MqConstants.ORDER_PAID_ROUTING_KEY,
+                new OrderPaidMessage(order.getUserId(), id));
         return Result.ok();
     }
 
@@ -195,8 +202,9 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
                 .setSql("stock = stock + 1")
                 .eq("voucher_id", order.getVoucherId())
                 .update();
-        afterCommit(() -> stringRedisTemplate.opsForValue()
-                .increment("seckill:{" + order.getVoucherId() + "}:stock"));
+        // 秒杀库存回补改为写 outbox，由 VoucherCacheListener 按订单去重消费
+        outboxWriter.write("VOUCHER", order.getVoucherId(), "SECKILL_STOCK_RESTORE",
+                stockRestoreMessage(order.getVoucherId(), id));
         return Result.ok();
     }
 
@@ -227,16 +235,19 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
                 .setSql("stock = stock + 1")
                 .eq("voucher_id", order.getVoucherId())
                 .update();
-        afterCommit(() -> stringRedisTemplate.opsForValue()
-                .increment("seckill:{" + order.getVoucherId() + "}:stock"));
+        // 超时关单的库存回补同样写 outbox，按订单去重消费
+        outboxWriter.write("VOUCHER", order.getVoucherId(), "SECKILL_STOCK_RESTORE",
+                stockRestoreMessage(order.getVoucherId(), orderId));
     }
 
-    private void afterCommit(Runnable runnable) {
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                runnable.run();
-            }
-        });
+    /**
+     * 构造秒杀库存回补消息：携带 orderId 供消费端做订单级去重，避免重投导致库存虚高。
+     */
+    private CacheSyncMessage stockRestoreMessage(Long voucherId, Long orderId) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("orderId", orderId);
+        CacheSyncMessage msg = new CacheSyncMessage("VOUCHER", voucherId, null, "SECKILL_STOCK_RESTORE");
+        msg.setData(data);
+        return msg;
     }
 }

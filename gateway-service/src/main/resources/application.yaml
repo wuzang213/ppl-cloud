@@ -8,11 +8,11 @@ hmdp:
     excludePaths:
       - /shop/of/name
       - /shop/of/type
-      - /voucher/**
+      - /voucher/list/**
       - /shop-type/**
-      - /upload/**
       - /blog/hot
       - /user/code
       - /user/login
+      - /user/register
       - /user/refresh
       - /user/logout

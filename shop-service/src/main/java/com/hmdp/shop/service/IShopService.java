@@ -16,4 +16,6 @@ public interface IShopService extends IService<Shop> {
     Result saveShop(ShopDTO dto);
 
     Result queryShopByName(String name, Integer current);
+
+    Result deleteShop(Long id);
 }

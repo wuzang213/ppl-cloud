@@ -9,6 +9,8 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.hmdp.common.cache.CacheClient;
 import com.hmdp.common.cache.SingleFlight;
 import com.hmdp.common.count.ViewCounter;
+import com.hmdp.common.domain.CacheSyncMessage;
+import com.hmdp.common.outbox.OutboxWriter;
 import org.redisson.api.RBloomFilter;
 import com.hmdp.common.constants.SystemConstants;
 import com.hmdp.common.domain.Result;
@@ -22,14 +24,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.geo.Distance;
 import org.springframework.data.geo.GeoResult;
 import org.springframework.data.geo.GeoResults;
-import org.springframework.data.geo.Point;
 import org.springframework.data.redis.connection.RedisGeoCommands;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.domain.geo.GeoReference;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import javax.annotation.Resource;
 import java.util.*;
@@ -57,6 +56,10 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
 
     @Resource
     private Cache<Long, Shop> shopCache;
+
+    // Shop 接入 Outbox，统一缓存同步可靠性等级
+    @Resource
+    private OutboxWriter outboxWriter;
 
     @Override
     public Result queryById(Long id) {
@@ -97,15 +100,9 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         }
         // 1. 更新数据库
         updateById(shop);
-        // 2. 事务提交后删缓存、更新 GEO
-        afterCommit(() -> {
-            stringRedisTemplate.delete(CACHE_SHOP_KEY + id);
-            stringRedisTemplate.opsForGeo().add(
-                    SHOP_GEO_KEY + shop.getTypeId(),
-                    new Point(shop.getX(), shop.getY()),
-                    shop.getId().toString());
-            shopBloomFilter.add(id.toString());
-        });
+        // 2. 写 outbox：删缓存 + 更新 GEO + 布隆统一由 ShopCacheListener 执行，
+        //    经 Canal + MQ 投递，有记录可对账重试，不再依赖请求线程内的 afterCommit
+        outboxWriter.write("SHOP", id, "SHOP_UPDATED", shopSyncMessage(shop, "SHOP_UPDATED"));
         return Result.ok();
     }
 
@@ -114,13 +111,8 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
     public Result saveShop(ShopDTO dto) {
         Shop shop = BeanUtil.copyProperties(dto, Shop.class);
         save(shop);
-        afterCommit(() -> {
-            stringRedisTemplate.opsForGeo().add(
-                    SHOP_GEO_KEY + shop.getTypeId(),
-                    new Point(shop.getX(), shop.getY()),
-                    shop.getId().toString());
-            shopBloomFilter.add(shop.getId().toString());
-        });
+        // 写 outbox：GEO + 布隆同样交给 ShopCacheListener 执行
+        outboxWriter.write("SHOP", shop.getId(), "SHOP_CREATED", shopSyncMessage(shop, "SHOP_CREATED"));
         return Result.ok(shop.getId());
     }
 
@@ -182,12 +174,26 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         return Result.ok(shops);
     }
 
-    private void afterCommit(Runnable runnable) {
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                runnable.run();
-            }
-        });
+    @Override
+    @Transactional
+    public Result deleteShop(Long id) {
+        removeById(id);
+        // 写 outbox：删缓存 + 布隆（布隆不支持删除，保持原有 add 语义）交给 ShopCacheListener
+        outboxWriter.write("SHOP", id, "SHOP_DELETED", new CacheSyncMessage("SHOP", id, null, "SHOP_DELETED"));
+        return Result.ok();
+    }
+
+    /**
+     * 构造 SHOP 缓存同步消息：把 GEO 更新所需的坐标、类型一并带入，
+     * 由 ShopCacheListener 消费时执行 Redis 缓存删除、GEO 更新与布隆写入。
+     */
+    private CacheSyncMessage shopSyncMessage(Shop shop, String eventType) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("typeId", shop.getTypeId());
+        data.put("x", shop.getX());
+        data.put("y", shop.getY());
+        CacheSyncMessage msg = new CacheSyncMessage("SHOP", shop.getId(), null, eventType);
+        msg.setData(data);
+        return msg;
     }
 }

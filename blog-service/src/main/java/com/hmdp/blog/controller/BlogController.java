@@ -3,10 +3,12 @@ package com.hmdp.blog.controller;
 import com.hmdp.blog.domain.Blog;
 import com.hmdp.blog.domain.BlogDTO;
 import com.hmdp.blog.service.IBlogService;
+import com.hmdp.common.annotation.LoginRequired;
 import com.hmdp.common.domain.Result;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -28,18 +30,35 @@ public class BlogController {
 
     @Operation(summary = "发布探店笔记")
     @PostMapping
+    @LoginRequired
     public Result saveBlog(@RequestBody BlogDTO dto) {
         return blogService.saveBlog(dto);
     }
 
+    @Operation(summary = "修改探店笔记")
+    @PutMapping
+    @LoginRequired
+    public Result updateBlog(@RequestBody BlogDTO dto) {
+        return blogService.updateBlog(dto);
+    }
+
+    @Operation(summary = "删除探店笔记")
+    @DeleteMapping("/{id}")
+    @LoginRequired
+    public Result deleteBlog(@PathVariable("id") @Parameter(description = "笔记ID") Long id) {
+        return blogService.deleteBlog(id);
+    }
+
     @Operation(summary = "点赞或取消点赞笔记")
     @PutMapping("/like/{id}")
+    @LoginRequired
     public Result likeBlog(@PathVariable("id") @Parameter(description = "笔记ID") Long id) {
         return blogService.likeBlog(id);
     }
 
     @Operation(summary = "查询我的笔记")
     @GetMapping("/of/me")
+    @LoginRequired
     public Result queryMyBlog(@RequestParam(value = "current", defaultValue = "1") @Parameter(description = "页码") Integer current) {
         return blogService.queryMyBlog(current);
     }
@@ -72,6 +91,7 @@ public class BlogController {
 
     @Operation(summary = "查询关注Feed流")
     @GetMapping("/of/follow")
+    @LoginRequired
     public Result queryBlogOfFollow(
             @RequestParam("lastId") @Parameter(description = "上次滚动最小时间戳") Long max,
             @RequestParam(value = "offset", defaultValue = "0") @Parameter(description = "同时间戳偏移") Integer offset) {
@@ -88,7 +108,7 @@ public class BlogController {
     @Operation(summary = "博客分页查询")
     @GetMapping("/page")
     public Result queryBlogPage(@RequestParam(value = "current", defaultValue = "1") @Parameter(description = "页码") Integer current,
-                                  @RequestParam(value = "size", defaultValue = "100") @Parameter(description = "每页数量") Integer size) {
+                                @RequestParam(value = "size", defaultValue = "100") @Parameter(description = "每页数量") Integer size) {
         return blogService.queryBlogPage(current, size);
     }
 }
