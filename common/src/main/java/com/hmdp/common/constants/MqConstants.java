@@ -29,6 +29,12 @@ public interface MqConstants {
     String ORDER_TIMEOUT_QUEUE = "order.timeout.queue";
     String ORDER_TIMEOUT_ROUTING_KEY = "order.timeout";
 
+    // 订单超时延迟队列（TTL 延迟，不依赖 delayed 插件）：
+    // 消息先入延迟队列躺 ORDER_TIMEOUT_DELAY_MS，TTL 到期作为死信转发到 ORDER_TIMEOUT_QUEUE。
+    String ORDER_TIMEOUT_DELAY_EXCHANGE = "order.timeout.delay.exchange";
+    String ORDER_TIMEOUT_DELAY_QUEUE = "order.timeout.delay.queue";
+    String ORDER_TIMEOUT_DELAY_ROUTING_KEY = "order.timeout.delay";
+
     // ========== 订单支付积分 ==========
     String ORDER_PAID_ROUTING_KEY = "order.paid";
     String USER_CREDIT_QUEUE = "user.credit.queue";

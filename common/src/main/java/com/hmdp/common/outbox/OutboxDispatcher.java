@@ -70,6 +70,14 @@ public class OutboxDispatcher {
         );
 
         Integer delayMs = event.getDelayMs();
+        if (delayMs != null && delayMs > 0) {
+            // setDelay 依赖 RabbitMQ delayed_message_exchange 插件，且目标交换机必须是
+            // x-delayed-message 类型；普通 direct/topic 交换机会静默忽略 x-delay header，
+            // 消息立即投递（延迟失效）。订单超时已改用「TTL 死信队列」方案（见 voucher 的
+            // OrderTimeoutMqConfig），这里保留 setDelay 仅为兼容历史事件，并打告警提示风险。
+            log.warn("outbox 事件带 delayMs={}，走 setDelay 延迟；若目标交换机 {} 非 x-delayed-message 类型，"
+                    + "延迟将静默失效（消息立即投递）。建议改用 TTL 死信队列方案。", delayMs, exchange);
+        }
         MessagePostProcessor postProcessor = message -> {
             MessageProperties props = message.getMessageProperties();
             props.getHeaders().remove(TYPE_ID_HEADER);

@@ -117,11 +117,13 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         if (!saved) {
             throw new RuntimeException("order save failed, voucherId=" + voucherOrder.getVoucherId());
         }
-        // 订单超时延迟消息改为写 outbox：由 Canal + MQ 延迟投递，
-        // 有记录可对账重试，不再依赖请求线程内的 afterCommit（失败即丢失）
+        // 订单超时延迟关闭改为写 outbox：由 Canal 投递到「延迟交换机 + 延迟队列」，
+        // 靠队列级 x-message-ttl(15min) 实现延迟，TTL 到期死信转发到 order.timeout.queue。
+        // 有记录可对账重试，不再依赖请求线程内的 afterCommit（失败即丢失），
+        // 也不依赖 RabbitMQ delayed 插件（普通 direct 交换机会静默忽略 setDelay，导致立即关单）。
         outboxWriter.write("VOUCHER_ORDER", voucherOrder.getId(), "ORDER_TIMEOUT_SCHEDULED",
-                SECKILL_DIRECT_EXCHANGE, MqConstants.ORDER_TIMEOUT_ROUTING_KEY,
-                VoucherConstants.ORDER_TIMEOUT_DELAY_MS, voucherOrder.getId());
+                MqConstants.ORDER_TIMEOUT_DELAY_EXCHANGE, MqConstants.ORDER_TIMEOUT_DELAY_ROUTING_KEY,
+                voucherOrder.getId());
         return true;
     }
 

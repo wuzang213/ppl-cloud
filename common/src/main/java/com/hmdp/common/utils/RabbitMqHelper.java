@@ -23,6 +23,9 @@ public class RabbitMqHelper {
     }
 
     public void sendDelayMessage(String exchange, String routingKey, Object msg, int delay){
+        log.warn("调用已废弃的 sendDelayMessage（依赖 delayed 插件 + x-delayed-message 交换机，"
+                        + "普通交换机会静默失效），exchange={}, routingKey={}, delay={}ms",
+                exchange, routingKey, delay);
         try {
             rabbitTemplate.convertAndSend(exchange, routingKey, msg,
                     message -> {
