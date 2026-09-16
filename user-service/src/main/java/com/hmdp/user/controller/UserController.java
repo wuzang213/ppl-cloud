@@ -2,6 +2,7 @@ package com.hmdp.user.controller;
 
 import com.hmdp.common.annotation.LoginRequired;
 import com.hmdp.common.domain.Result;
+import com.hmdp.user.domain.ChangePasswordDTO;
 import com.hmdp.user.domain.LoginFormDTO;
 import com.hmdp.user.domain.UserInfoDTO;
 import com.hmdp.user.service.IUserService;
@@ -54,6 +55,14 @@ public class UserController {
     public Result logout(@RequestParam("refreshToken") @Parameter(description = "刷新令牌") String refreshToken) {
         return userService.logout(refreshToken);
     }
+
+    @Operation(summary = "修改密码（需原密码；成功后 tokenVersion 递增，全设备下线需重新登录）")
+    @PutMapping("/password")
+    @LoginRequired
+    public Result changePassword(@RequestBody ChangePasswordDTO dto) {
+        return userService.changePassword(dto);
+    }
+
 
     @Operation(summary = "当前用户全设备下线")
     @PostMapping("/kick-all")

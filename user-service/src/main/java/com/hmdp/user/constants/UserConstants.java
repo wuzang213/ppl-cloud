@@ -13,6 +13,14 @@ public final class UserConstants {
     /** 短信验证码发送过于频繁 */
     public static final String CODE_SEND_TOO_FREQUENT = "验证码发送过于频繁，请稍后再试";
 
+    // 修改密码
+    /** 原密码不正确 */
+    public static final String OLD_PASSWORD_ERROR = "原密码错误";
+    /** 新密码长度不合法 */
+    public static final String NEW_PASSWORD_INVALID = "新密码长度需为 6-20 位";
+    /** 新旧密码相同 */
+    public static final String SAME_PASSWORD = "新密码不能与原密码相同";
+
     // 默认积分、等级、签到积分、订单积分、等级提升积分
     public static final int DEFAULT_CREDITS = 0;
     public static final int DEFAULT_LEVEL = 1;

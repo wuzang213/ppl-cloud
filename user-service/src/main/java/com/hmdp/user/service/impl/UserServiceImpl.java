@@ -16,14 +16,9 @@ import com.hmdp.common.exception.BadRequestException;
 import com.hmdp.common.exception.UnauthorizedException;
 import com.hmdp.user.config.JwtProperties;
 import com.hmdp.user.config.JwtUtils;
-import com.hmdp.user.domain.TokenPair;
+import com.hmdp.user.domain.*;
 import com.hmdp.user.constants.UserConstants;
 import com.hmdp.common.utils.UserHolder;
-import com.hmdp.user.domain.LoginFormDTO;
-import com.hmdp.user.domain.UserInfo;
-import com.hmdp.user.domain.UserInfoDTO;
-import com.hmdp.user.domain.User;
-import com.hmdp.user.domain.UserDTO;
 import com.hmdp.user.mapper.UserMapper;
 import com.hmdp.user.service.IUserInfoService;
 import com.hmdp.user.service.IUserService;
@@ -241,14 +236,53 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         return Result.ok(createToken(userDTO, deviceId));
     }
 
-    /**
-     *
-     * 强制下线所有设备
-     * @return
-     */
     @Override
     public Result kickAllDevices() {
         Long userId = UserHolder.getUser().getId();
+        rotateTokenVersionAndKickAll(userId);
+        return Result.ok();
+    }
+
+    /**
+     * 修改密码：校验原密码 → 更新密码摘要 → 递增 tokenVersion 并清空全部设备会话。
+     */
+    @Override
+    @Transactional
+    public Result changePassword(ChangePasswordDTO dto) {
+        if (dto == null || StrUtil.isBlank(dto.getOldPassword()) || StrUtil.isBlank(dto.getNewPassword())) {
+            throw new BadRequestException(UserConstants.PHONE_PASSWORD_INVALID);
+        }
+        String newPassword = dto.getNewPassword();
+        if (newPassword.length() < 6 || newPassword.length() > 20) {
+            throw new BadRequestException(UserConstants.NEW_PASSWORD_INVALID);
+        }
+        Long userId = UserHolder.getUser().getId();
+        User user = getById(userId);
+        if (user == null) {
+            throw new BadRequestException(UserConstants.USER_NOT_FOUND);
+        }
+        // 1. 校验原密码：不能仅凭 accessToken 就改密，否则 token 泄露 = 账号被永久接管
+        if (StrUtil.isBlank(user.getPassword())
+                || !PasswordEncoder.matches(user.getPassword(), dto.getOldPassword())) {
+            throw new BadRequestException(UserConstants.OLD_PASSWORD_ERROR);
+        }
+        // 2. 新旧密码不得相同（BCrypt 每次加盐不同，必须用 matches 比对，不能用字符串比较）
+        if (PasswordEncoder.matches(user.getPassword(), newPassword)) {
+            throw new BadRequestException(UserConstants.SAME_PASSWORD);
+        }
+        // 3. 更新为新密码的 BCrypt 摘要（只动 password 一列）
+        update().set("password", PasswordEncoder.encode(newPassword)).eq("id", userId).update();
+        // 4. 递增 tokenVersion 并清空全部设备会话 —— 改密即全设备下线
+        rotateTokenVersionAndKickAll(userId);
+
+        log.info("用户修改密码成功，已强制全设备下线 userId={}", userId);
+        return Result.ok();
+    }
+
+    /**
+     * 递增 tokenVersion + 写入 Redis + 原子清空该用户所有设备的 refreshToken 双向索引。
+     */
+    private void rotateTokenVersionAndKickAll(Long userId) {
         update().setSql("token_version = token_version + 1").eq("id", userId).update();
         Integer version = getTokenVersion(userId);
         stringRedisTemplate.opsForValue().set(
@@ -259,7 +293,6 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         stringRedisTemplate.execute(KICK_ALL_SCRIPT,
                 Collections.singletonList(LOGIN_DEVICES_KEY + userId),
                 REFRESH_TOKEN_KEY, REFRESH_INDEX_KEY, userId.toString());
-        return Result.ok();
     }
 
     private User createUserWithPhone(String phone) {

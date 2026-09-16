@@ -2,6 +2,7 @@ package com.hmdp.user.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.hmdp.common.domain.Result;
+import com.hmdp.user.domain.ChangePasswordDTO;
 import com.hmdp.user.domain.LoginFormDTO;
 import com.hmdp.user.domain.UserInfoDTO;
 import com.hmdp.user.domain.User;
@@ -26,9 +27,8 @@ public interface IUserService extends IService<User> {
 
     void addCreditsByOrder(Long userId);
 
-    /**
-     * 签到积分补偿：由 UserCacheListener 消费 outbox 事件时调用。
-     */
+    Result changePassword(ChangePasswordDTO dto);
+
     void addSignCredits(Long userId);
 
     Result getMe();
