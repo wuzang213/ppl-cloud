@@ -26,6 +26,7 @@ import com.hmdp.common.domain.NoticeMessage;
 import com.hmdp.common.domain.ScrollResult;
 import com.hmdp.common.count.ViewCounter;
 import com.hmdp.common.outbox.OutboxWriter;
+import com.hmdp.common.cache.CacheProperties;
 import org.springframework.dao.DataAccessException;
 import com.hmdp.common.domain.UserDTO;
 import com.hmdp.common.exception.BadRequestException;
@@ -82,6 +83,9 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
 
     @Resource
     private CacheClient cacheClient;
+    // 压测对照开关：hmdp.cache.enabled=false 时跳过全部缓存，直达 MySQL
+    @Resource
+    private CacheProperties cacheProperties;
 
     // Feed 并行拉取专用线程池
     private static final AtomicInteger FEED_SEQ = new AtomicInteger(0);
@@ -99,19 +103,30 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
     @Override
     public Result queryBlogById(Long id) {
         // 请求路径只做一次内存入队，不碰 Redis
+        // 注意：改造前后均存在，其开销不计入缓存改造收益，故不受 cache.enabled 控制
         viewCounter.asyncIncr(VIEW_BLOG_KEY, id);
-        // 1. 查Caffeine本地缓存（只缓存博客基础DO，不含 isLike 等用户相关字段）
-        Blog blog = blogCache.getIfPresent(id);
-        if (blog == null) {
-            // 2. Redis + MySQL 整体交给 queryWithPassThrough（自带随机 TTL + 空值防穿透），
-            //    并用 single-flight 合并热点回源；不能只包 DB，否则并发请求依旧各自先打一次 Redis
-            blog = singleFlight.run(CACHE_BLOG_KEY + id, () -> cacheClient.queryWithPassThrough(
-                    CACHE_BLOG_KEY, id, Blog.class, this::getById, CACHE_BLOG_TTL, TimeUnit.MINUTES));
+
+        Blog blog;
+        // 压测对照开关：直达 MySQL（模拟改造前）
+        if (!cacheProperties.isEnabled()) {
+            blog = getById(id);
             if (blog == null) {
                 throw new BadRequestException(BlogConstants.BLOG_NOT_FOUND);
             }
-            // 3. 回填Caffeine
-            blogCache.put(id, blog);
+        } else {
+            // 1. 查Caffeine本地缓存（只缓存博客基础DO，不含 isLike 等用户相关字段）
+            blog = blogCache.getIfPresent(id);
+            if (blog == null) {
+                // 2. Redis + MySQL 整体交给 queryWithPassThrough（自带随机 TTL + 空值防穿透），
+                //    并用 single-flight 合并热点回源；不能只包 DB，否则并发请求依旧各自先打一次 Redis
+                blog = singleFlight.run(CACHE_BLOG_KEY + id, () -> cacheClient.queryWithPassThrough(
+                        CACHE_BLOG_KEY, id, Blog.class, this::getById, CACHE_BLOG_TTL, TimeUnit.MINUTES));
+                if (blog == null) {
+                    throw new BadRequestException(BlogConstants.BLOG_NOT_FOUND);
+                }
+                // 3. 回填Caffeine
+                blogCache.put(id, blog);
+            }
         }
         // 4. 拷贝一份再组装：queryBlogUser / isBlogLiked 是用户相关字段，直接改会污染共享缓存对象
         Blog result = copyBlog(blog);

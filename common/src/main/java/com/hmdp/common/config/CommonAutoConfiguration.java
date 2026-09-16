@@ -1,5 +1,7 @@
 package com.hmdp.common.config;
 
+import com.hmdp.common.cache.CacheProperties;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.FilterType;
@@ -10,6 +12,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  */
 @Configuration
 @EnableScheduling
+@EnableConfigurationProperties(CacheProperties.class)
 @ComponentScan(basePackages = "com.hmdp.common",
         excludeFilters = @ComponentScan.Filter(
                 type = FilterType.ASSIGNABLE_TYPE,

@@ -21,6 +21,7 @@ import com.hmdp.shop.domain.ShopDTO;
 import com.hmdp.shop.mapper.ShopMapper;
 import com.hmdp.shop.service.IShopService;
 import lombok.extern.slf4j.Slf4j;
+import com.hmdp.common.cache.CacheProperties;
 import org.springframework.data.geo.Distance;
 import org.springframework.data.geo.GeoResult;
 import org.springframework.data.geo.GeoResults;
@@ -57,6 +58,10 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
     @Resource
     private Cache<Long, Shop> shopCache;
 
+    // 压测对照开关：hmdp.cache.enabled=false 时跳过全部缓存，直达 MySQL
+    @Resource
+    private CacheProperties cacheProperties;
+
     // Shop 接入 Outbox，统一缓存同步可靠性等级
     @Resource
     private OutboxWriter outboxWriter;
@@ -64,7 +69,18 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
     @Override
     public Result queryById(Long id) {
         // 增加浏览量，请求路径只做一次内存入队，不碰 Redis
+        // 注意：改造前后均存在，其开销不计入缓存改造收益，故不受 cache.enabled 控制
         viewCounter.asyncIncr(VIEW_SHOP_KEY, id);
+
+        // 压测对照开关：直达 MySQL（模拟改造前）
+        if (!cacheProperties.isEnabled()) {
+            Shop dbShop = getById(id);
+            if (dbShop == null) {
+                throw new BadRequestException(ShopConstants.SHOP_NOT_FOUND);
+            }
+            return Result.ok(dbShop);
+        }
+
         // 1. 查Caffeine本地缓存
         Shop shop = shopCache.getIfPresent(id);
         if (shop != null) {
