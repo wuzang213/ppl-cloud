@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.hmdp</groupId>
+        <artifactId>hm-dianping-cloud</artifactId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>search-service</artifactId>
+
+    <properties>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <dependencies>
+        <!--common（含 outbox 消费幂等、JdbcTemplate、Redis、AMQP 的 Starter 能力）-->
+        <dependency>
+            <groupId>com.hmdp</groupId>
+            <artifactId>common</artifactId>
+            <version>1.0-SNAPSHOT</version>
+        </dependency>
+        <!-- mybatis-plus：common 的 MybatisConfig（@Configuration，无 @ConditionalOnClass）需要它，而 common 声明为 provided，故子服务必须自备；search-service 自身不写 mapper，只用 JdbcTemplate 读写重建进度/失败表。 -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-boot-starter</artifactId>
+        </dependency>
+        <!--web-->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <!--nacos 服务注册发现-->
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+        </dependency>
+        <!--nacos配置管理-->
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
+        </dependency>
+        <!--读取bootstrap文件-->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-bootstrap</artifactId>
+        </dependency>
+        <!--反查契约（BlogClient / ShopClient / UserClient）-->
+        <dependency>
+            <groupId>com.hmdp</groupId>
+            <artifactId>api-service</artifactId>
+            <version>1.0-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>io.github.openfeign</groupId>
+            <artifactId>feign-okhttp</artifactId>
+        </dependency>
+        <!--sentinel（与其它业务服务保持一致，读同一份 shared-sentinel.yaml）-->
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-sentinel</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>mysql</groupId>
+            <artifactId>mysql-connector-java</artifactId>
+        </dependency>
+
+        <!-- ES 客户端用官方 RestHighLevelClient，不用 spring-boot-starter-data-elasticsearch：Boot 2.7 托管的 Spring Data ES 4.4.x 官方只兼容 7.17.x，而 101 上服务端是 7.12.1；版本由根 pom 的 <elasticsearch.version>7.12.1</elasticsearch.version> 统一决定（必须保留该属性覆盖），mapping / 查询 DSL / _update_by_query / _aliases 全是手写 JSON，typed API 只用于 index/delete/bulk/updateByQuery/aliases。 -->
+        <dependency>
+            <groupId>org.elasticsearch.client</groupId>
+            <artifactId>elasticsearch-rest-high-level-client</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.elasticsearch.client</groupId>
+            <artifactId>elasticsearch-rest-client</artifactId>
+        </dependency>
+
+        <!-- 测试：只加 spring-boot-starter-test（version 由 parent 托管，不引入 Testcontainers / 嵌入式 ES）；边界 = 零外部依赖的纯逻辑（PagingGuard / HighlightSanitizer / EsIndexNames / IndexDefinitions / SearchProperties）+ 读文件的静态契约；禁止 @SpringBootTest（启动会去 Nacos 拉配置必然失败，见 common/AGENTS.md §7）。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

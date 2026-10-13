@@ -29,23 +29,13 @@ public class RedissonConfig {
         config.useSingleServer()
                 .setAddress("redis://" + redisHost + ":" + redisPort)
                 .setPassword(redisPassword);
-//        List<String> nodeAddresses = clusterNodes.stream()
-//                .map(node -> node.startsWith("redis://") ? node : "redis://" + node)
-//                .collect(Collectors.toList());
-//        config.useClusterServers()
-//                .setPassword(redisPassword)
-//                .addNodeAddress(nodeAddresses.toArray(new String[0]));
+//        集群模式（当前未启用）：clusterNodes 补 redis:// 前缀后用
+//        config.useClusterServers().setPassword(redisPassword).addNodeAddress(nodeAddresses)
         return Redisson.create(config);
     }
 
-    /**
-     * 配置Lettuce的读写策略
-     * - MASTER：从主节点读取
-     * - MASTER_PREFERRED：优先从master节点读取，master不可用才读取replica
-     * - REPLICA：从slave（replica）节点读取
-     * - REPLICA _PREFERRED：优先从slave（replica）节点读取，所有的slave都不可用才读取master
-     * @return
-     */
+    /** 配置 Lettuce 读写策略：MASTER / MASTER_PREFERRED / REPLICA / REPLICA_PREFERRED，
+     * REPLICA_PREFERRED = 优先读 replica、全部不可用才回主。 */
     @Bean
     public LettuceClientConfigurationBuilderCustomizer clientConfigurationBuilderCustomizer(){
         return clientConfigurationBuilder -> clientConfigurationBuilder.readFrom(ReadFrom.REPLICA_PREFERRED);

@@ -9,24 +9,17 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * Outbox 写入器：业务表和事件表必须在同一本地事务中提交。
- * <p>
- * 所有事件统一以 {@link OutboxEvent} 信封结构落库，由 Canal 监听 {@code business_outbox}
- * 后交给 {@link OutboxDispatcher} 投递到 MQ。相比在事务后直接操作 Redis / 发 MQ，
- * outbox 记录本身可对账重试，不会因进程异常而丢失副作用。
- */
+/** Outbox 写入器：业务表和事件表必须在同一本地事务中提交。所有事件统一以 OutboxEvent 信封落库，
+ * 由 Canal 监听 business_outbox 后交给 OutboxDispatcher 投递到 MQ；相比事务后直接操作 Redis/发 MQ，
+ * outbox 记录可对账重试，不会因进程异常而丢失副作用。 */
 @Component
 @RequiredArgsConstructor
 public class OutboxWriter {
 
     private final JdbcTemplate jdbcTemplate;
 
-    /**
-     * 当前服务名，写入事件信封用于 Canal 消费端校验归属。
-     * 四个库在同一个 MySQL 实例下共用 canal instance 时，各库 outbox 主键会跨库撞车，
-     * 该字段是客户端 filter 配漏时的最后一道防线。
-     */
+    /** 当前服务名，写入事件信封用于 Canal 消费端校验归属：四库共用 canal instance 时 outbox 主键会跨库撞车，
+     * 该字段是客户端 filter 配漏时的最后一道防线。 */
     @Value("${spring.application.name:}")
     private String app;
 

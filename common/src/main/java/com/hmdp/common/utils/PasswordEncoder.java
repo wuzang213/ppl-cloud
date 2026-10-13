@@ -10,11 +10,7 @@ import java.nio.charset.StandardCharsets;
 public class PasswordEncoder {
     private final static BCryptPasswordEncoder ENCODER = new BCryptPasswordEncoder();
 
-    /**
-     * 加密密码
-     * @param password
-     * @return
-     */
+    /** 加密密码（BCrypt）；password 为 null 时抛 IllegalArgumentException。 */
     public static String encode(String password) {
         if (password == null) {
             throw new IllegalArgumentException("密码不能为空");

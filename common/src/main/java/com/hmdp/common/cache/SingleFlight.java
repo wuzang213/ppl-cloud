@@ -7,14 +7,8 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
-/**
- * 进程内 single-flight：同一 key 并发回源时只让一个线程真正查库。
- * <p>
- * 使用专用有界线程池替代 ForkJoinPool.commonPool()，
- * 避免回源阻塞污染公共池影响 parallelStream 等其他任务。
- * <p>
- * 增强：增加3s查询超时，防止loader卡死造成线程永久阻塞
- */
+/** 进程内 single-flight：同一 key 并发回源只让一个线程真正查库；
+ * 用专用有界线程池替代 ForkJoinPool.commonPool() 避免污染公共池，查询超时 3s 防 loader 卡死。 */
 @Slf4j
 @Component
 public class SingleFlight {

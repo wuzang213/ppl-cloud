@@ -3,6 +3,7 @@ server:
 spring:
   jackson:
     default-property-inclusion: non_null # JSON处理时忽略非空字段
+  # 消费端最大重试 3 次，重试耗尽后不重回队列（进死信）
   rabbitmq:
     listener:
       simple:
@@ -14,7 +15,7 @@ spring:
         default-requeue: false
 hmdp:
   db:
-    database: ${db.voucher} # 你的数据库名称
+    database: hmdp_voucher
   mp:
     package: voucher
   swagger:
@@ -22,6 +23,9 @@ hmdp:
     package: com.hmdp.voucher.controller
 mybatis-plus:
   mapper-locations: classpath*:mapper/*.xml
+# canal 客户端订阅过滤：四个库在同一 MySQL 实例、共用一个 canal instance，
+# 而 canal-client 的 handler 只按表名路由（不含库名），必须限定到本服务的库，
+# 否则会收到其它库的 business_outbox 事件（主键跨库撞车）
 canal:
   filter: 'hmdp_voucher\.business_outbox'
 

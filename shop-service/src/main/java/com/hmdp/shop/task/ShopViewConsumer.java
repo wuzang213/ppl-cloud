@@ -9,9 +9,9 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Component;
 
-/**
- * 消费 Kafka 店铺浏览量消息，幂等地累加到 MySQL。
- */
+/** 消费 Kafka 店铺浏览量消息，幂等地累加到 MySQL：以 (topic, partition, offset) 为唯一键落 {@code consumed_offset} 表，
+ * 重复投递被 INSERT IGNORE 挡掉（见 {@link com.hmdp.common.count.ConsumedOffsetService}）。已关自动提交
+ * （{@code enable-auto-commit: false}），ackMode {@code manual_immediate} 显式 ack；异常不吞，交 DefaultErrorHandler 有界重试 3 次后提交 offset 跳过。 */
 @Slf4j
 @Component
 @RequiredArgsConstructor

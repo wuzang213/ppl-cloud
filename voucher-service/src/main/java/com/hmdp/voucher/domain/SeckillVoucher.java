@@ -20,7 +20,7 @@ public class SeckillVoucher implements Serializable {
     private static final long serialVersionUID = 1L;
 
     /**
-     * 关联的优惠券的id
+     * 关联的代金券的id
      */
     @TableId(value = "voucher_id", type = IdType.INPUT)
     private Long voucherId;

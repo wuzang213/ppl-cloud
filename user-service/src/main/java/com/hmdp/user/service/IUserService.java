@@ -19,6 +19,11 @@ public interface IUserService extends IService<User> {
     Result refreshToken(String refreshToken);
     Result kickAllDevices();
 
+    /**
+     * 修改密码：校验原密码 → 更新为新密码摘要 → 递增 tokenVersion 并清空全部设备会话；成功后当前设备也下线，需重新登录。
+     */
+    Result changePassword(ChangePasswordDTO dto);
+
     Result register(LoginFormDTO loginForm);
 
     Result updateInfo(UserInfoDTO info);
@@ -27,8 +32,9 @@ public interface IUserService extends IService<User> {
 
     void addCreditsByOrder(Long userId);
 
-    Result changePassword(ChangePasswordDTO dto);
-
+    /**
+     * 签到积分补偿：由 UserCacheListener 消费 outbox 事件时调用。
+     */
     void addSignCredits(Long userId);
 
     Result getMe();

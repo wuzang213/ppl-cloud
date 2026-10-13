@@ -56,19 +56,18 @@ public class UserController {
         return userService.logout(refreshToken);
     }
 
-    @Operation(summary = "修改密码（需原密码；成功后 tokenVersion 递增，全设备下线需重新登录）")
-    @PutMapping("/password")
-    @LoginRequired
-    public Result changePassword(@RequestBody ChangePasswordDTO dto) {
-        return userService.changePassword(dto);
-    }
-
-
     @Operation(summary = "当前用户全设备下线")
     @PostMapping("/kick-all")
     @LoginRequired
     public Result kickAll() {
         return userService.kickAllDevices();
+    }
+
+    @Operation(summary = "修改密码（需原密码；成功后 tokenVersion 递增，全设备下线需重新登录）")
+    @PutMapping("/password")
+    @LoginRequired
+    public Result changePassword(@RequestBody ChangePasswordDTO dto) {
+        return userService.changePassword(dto);
     }
 
     @Operation(summary = "查询当前登录用户")

@@ -7,9 +7,8 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.util.backoff.FixedBackOff;
 
-/**
- * Kafka 消费失败处理：有界重试 + 重试耗尽后跳过并告警。
- */
+/** Kafka 消费失败处理：关闭自动提交后（enable-auto-commit: false + ack-mode: manual_immediate），毒消息不 ack 会被反复 seek 重放堵死分区。
+ * 故间隔 1s 重试 3 次，耗尽后打 error 日志 + setCommitRecovered(true) 提交 offset 跳过；⚠️ setCommitRecovered 仅在 ackMode=MANUAL_IMMEDIATE 时生效，两者必须成对配置。 */
 @Slf4j
 @Configuration
 @ConditionalOnClass(DefaultErrorHandler.class)

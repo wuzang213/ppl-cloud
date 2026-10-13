@@ -18,6 +18,7 @@ nacos-config/
 │   ├── shared-sentinel.yaml
 │   ├── shared-swagger.yaml
 │   ├── shared-log.yaml
+│   ├── shared-elasticsearch.yaml
 │   └── gateway-routes.json
 └── DEFAULT_GROUP/               # 分组：DEFAULT_GROUP
     └── shared-seata.yaml
@@ -54,6 +55,7 @@ nacos-config/
 | `shared-sentinel.yaml` | Sentinel 流控控制台地址 |
 | `shared-swagger.yaml` | Knife4j 接口文档配置 |
 | `shared-log.yaml` | 日志级别 |
+| `shared-elasticsearch.yaml` | 站内搜索服务的 Elasticsearch 连接（本地 yaml 优先，此处为 Nacos 侧兜底） |
 | `shared-seata.yaml` | Seata 分布式事务 TC 注册中心配置 |
 | `gateway-routes.json` | 网关动态路由规则，新增服务时在此追加 |
 
@@ -77,6 +79,7 @@ nacos-config/
 | | `canal.destination` | Canal 集群名，需与安装时设置一致 |
 | `shared-sentinel.yaml` | `hmdp.sentinel.transport.dashboard` | Sentinel 控制台地址，默认 `localhost:8090` |
 | `shared-swagger.yaml` | `hmdp.swagger.*` | 接口文档的标题、邮箱、联系人等 |
+| `shared-elasticsearch.yaml` | `ES_HOST` / `ES_PORT` | Elasticsearch 地址与端口，默认 `127.0.0.1:9200` |
 | `shared-seata.yaml` | `nacos.server-addr` | Nacos 地址 |
 | | `nacos.username` / `nacos.password` | Nacos 账号密码 |
 

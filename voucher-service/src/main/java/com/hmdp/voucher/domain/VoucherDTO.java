@@ -6,7 +6,7 @@ import lombok.Data;
 
 import java.time.LocalDateTime;
 
-@Schema(description = "优惠券表单")
+@Schema(description = "代金券表单")
 @Data
 public class VoucherDTO {
     private Long id;

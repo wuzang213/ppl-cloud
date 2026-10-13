@@ -1,12 +1,14 @@
 spring:
   application:
     name: user-service # 服务名称
+  profiles:
+    active: local
   cloud:
     nacos:
-      server-addr: ${nacos.server-addr:127.0.0.1:8848} # 本地默认nacos地址，部署时覆盖
+      server-addr: ${nacos.server-addr:127.0.0.1:8848} # 本地默认，部署时填实际 Nacos 地址
       config:
         file-extension: yaml # 文件后缀名
-        # 服务自身配置 blog-service.yaml 读取 HMDP_CLOUD 分组
+        # 服务自身配置 user-service.yaml 读取 HMDP_CLOUD 分组
         group: HMDP_CLOUD
         shared-configs: # 共享配置逐条指定分组+动态刷新
           - dataId: shared-jdbc.yaml
@@ -16,6 +18,10 @@ spring:
             group: HMDP_CLOUD
             refresh: true
           - dataId: shared-redis.yaml
+            group: HMDP_CLOUD
+            refresh: true
+          # 签到积分等副作用改为 outbox + Canal 投递，需与其它服务一致引入 canal 配置
+          - dataId: shared-canal.yaml
             group: HMDP_CLOUD
             refresh: true
           - dataId: shared-rabbitmq.yaml
@@ -29,9 +35,6 @@ spring:
             refresh: true
           - dataId: shared-seata.yaml
             group: DEFAULT_GROUP
-            refresh: true
-          - dataId: shared-canal.yaml
-            group: HMDP_CLOUD
             refresh: true
 seata:
   tx-service-group: hmdp  # 本地只留这一行，标识当前服务属于hmdp事务组

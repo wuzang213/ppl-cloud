@@ -3,7 +3,7 @@ spring:
     name: gateway
   cloud:
     nacos:
-      server-addr: ${nacos.server-addr:127.0.0.1:8848} # 本地默认nacos地址，部署时覆盖
+      server-addr: ${nacos.server-addr:127.0.0.1:8848} # 本地默认，部署时填实际 Nacos 地址
       config:
         file-extension: yaml
         group: HMDP_CLOUD

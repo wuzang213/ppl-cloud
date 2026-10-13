@@ -1,0 +1,89 @@
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0,
+    "refresh_interval": "1s",
+    "max_result_window": 10000
+  },
+  "mappings": {
+    "properties": {
+      "id": {
+        "type": "long"
+      },
+      "name": {
+        "type": "text",
+        "analyzer": "ik_max_word",
+        "search_analyzer": "ik_smart",
+        "fields": {
+          "keyword": {
+            "type": "keyword",
+            "ignore_above": 256
+          }
+        }
+      },
+      "typeId": {
+        "type": "long"
+      },
+      "typeName": {
+        "type": "text",
+        "analyzer": "ik_smart",
+        "fields": {
+          "keyword": {
+            "type": "keyword",
+            "ignore_above": 256
+          }
+        }
+      },
+      "area": {
+        "type": "text",
+        "analyzer": "ik_smart",
+        "fields": {
+          "keyword": {
+            "type": "keyword",
+            "ignore_above": 256
+          }
+        }
+      },
+      "address": {
+        "type": "text",
+        "analyzer": "ik_smart"
+      },
+      "location": {
+        "type": "geo_point"
+      },
+      "avgPrice": {
+        "type": "long"
+      },
+      "score": {
+        "type": "integer"
+      },
+      "sold": {
+        "type": "integer"
+      },
+      "comments": {
+        "type": "integer"
+      },
+      "viewCount": {
+        "type": "long"
+      },
+      "openHours": {
+        "type": "keyword",
+        "index": false,
+        "doc_values": false
+      },
+      "images": {
+        "type": "keyword",
+        "index": false,
+        "doc_values": false
+      },
+      "createTime": {
+        "type": "date",
+        "format": "strict_date_optional_time||epoch_millis"
+      },
+      "updateTime": {
+        "type": "date",
+        "format": "strict_date_optional_time||epoch_millis"
+      }
+    }
+  }
+}

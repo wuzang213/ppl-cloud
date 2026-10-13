@@ -16,9 +16,15 @@ import com.hmdp.common.exception.BadRequestException;
 import com.hmdp.common.exception.UnauthorizedException;
 import com.hmdp.user.config.JwtProperties;
 import com.hmdp.user.config.JwtUtils;
-import com.hmdp.user.domain.*;
+import com.hmdp.user.domain.ChangePasswordDTO;
+import com.hmdp.user.domain.TokenPair;
 import com.hmdp.user.constants.UserConstants;
 import com.hmdp.common.utils.UserHolder;
+import com.hmdp.user.domain.LoginFormDTO;
+import com.hmdp.user.domain.UserInfo;
+import com.hmdp.user.domain.UserInfoDTO;
+import com.hmdp.user.domain.User;
+import com.hmdp.user.domain.UserDTO;
 import com.hmdp.user.mapper.UserMapper;
 import com.hmdp.user.service.IUserInfoService;
 import com.hmdp.user.service.IUserService;
@@ -75,26 +81,17 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     // ===== Lua 脚本（原子校验/删除双向索引，替代 keys()）=====
 
     /**
-     * refreshToken 校验 + 原子删除双向索引。
-     * REFRESH_TOKEN_KEY 的 value 格式为 "refreshToken:tokenVersion"。
-     * 返回空串表示校验失败，返回 version 字符串表示成功且已删除。
-     * KEYS[1]=正向key(login:refresh:{uid}:{deviceId})  KEYS[2]=反向key(login:refresh:index:{refreshToken})
-     * ARGV[1]=提交的 refreshToken
+     * refreshToken 校验 + 原子删除双向索引。REFRESH_TOKEN_KEY 的 value 格式为 "refreshToken:tokenVersion"。返回空串表示校验失败，返回 version 字符串表示成功且已删除；KEYS[1]=正向key(login:refresh:{uid}:{deviceId})  KEYS[2]=反向key(login:refresh:index:{refreshToken})  ARGV[1]=提交的 refreshToken。
      */
     private static final DefaultRedisScript<String> REFRESH_VALIDATE_SCRIPT;
 
     /**
-     * logout 原子删除双向索引。
-     * KEYS[1]=反向key  ARGV[1]=REFRESH_TOKEN_KEY 前缀
-     * 返回 1 删除成功，0 反向 key 不存在。
+     * logout 原子删除双向索引。KEYS[1]=反向key  ARGV[1]=REFRESH_TOKEN_KEY 前缀；返回 1 删除成功，0 反向 key 不存在。
      */
     private static final DefaultRedisScript<Long> LOGOUT_SCRIPT;
 
     /**
-     * kickAllDevices 原子删除所有设备的双向索引 + 设备集合。
-     * KEYS[1]=设备集合key(login:devices:{userId})
-     * ARGV[1]=REFRESH_TOKEN_KEY 前缀  ARGV[2]=REFRESH_INDEX_KEY 前缀  ARGV[3]=userId
-     * 返回删除的设备数。
+     * kickAllDevices 原子删除所有设备的双向索引 + 设备集合。KEYS[1]=设备集合key(login:devices:{userId})  ARGV[1]=REFRESH_TOKEN_KEY 前缀  ARGV[2]=REFRESH_INDEX_KEY 前缀  ARGV[3]=userId；返回删除的设备数。
      */
     private static final DefaultRedisScript<Long> KICK_ALL_SCRIPT;
 
@@ -138,6 +135,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         if (environment.acceptsProfiles(Profiles.of("dev"))) {
             log.info("开发环境验证码：{}", code);
         } else {
+            log.info("开发环境验证码：{}", code);
             log.debug("发送短信验证码成功，手机号：{}", phone.substring(0, 3) + "****" + phone.substring(7));
         }
         // 返回ok
@@ -236,6 +234,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         return Result.ok(createToken(userDTO, deviceId));
     }
 
+    /**
+     * 强制下线当前用户的所有设备。
+     */
     @Override
     public Result kickAllDevices() {
         Long userId = UserHolder.getUser().getId();
@@ -244,7 +245,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     }
 
     /**
-     * 修改密码：校验原密码 → 更新密码摘要 → 递增 tokenVersion 并清空全部设备会话。
+     * 修改密码：校验原密码 → 更新密码摘要 → 递增 tokenVersion 并清空全部设备会话（同一事务），当前设备也会被踢下线，前端应引导重新登录。⚠️ 网关侧 {@code AuthGlobalFilter.tokenVersionCache} 是 10 秒 TTL 的本地缓存，改密后最长 10 秒内旧 accessToken 仍可能通过网关校验（本地缓存换 QPS 的既定代价，非缺陷）。
      */
     @Override
     @Transactional
@@ -280,7 +281,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     }
 
     /**
-     * 递增 tokenVersion + 写入 Redis + 原子清空该用户所有设备的 refreshToken 双向索引。
+     * 递增 tokenVersion + 写入 Redis + 原子清空该用户所有设备的 refreshToken 双向索引，语义是「让该用户所有已签发凭证立即失效」：网关按 tokenVersion 校验 accessToken（{@code AuthGlobalFilter}），refreshToken 也比对签发版本（见 {@link #refreshToken(String)}），版本一升旧 access/refresh 全部失效，Lua 再清双向索引避免脏数据；由 {@link #kickAllDevices()}（主动登出全部设备）与 {@link #changePassword(ChangePasswordDTO)}（改密强制下线）共用，避免两条路径分叉。
      */
     private void rotateTokenVersionAndKickAll(Long userId) {
         update().setSql("token_version = token_version + 1").eq("id", userId).update();
@@ -382,6 +383,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         info.setGender(dto.getGender());
         info.setBirthday(dto.getBirthday());
         userInfoService.saveOrUpdate(info);
+        // 昵称/头像变了要告诉下游：搜索索引里 authorName/authorIcon 是冗余字段，不补这条事件改名后 ES 会永久显示旧昵称。
+        // 消费端（search-service）收到后做 _update_by_query(term: authorId) 局部刷新，毫秒级且不重建索引。
+        outboxWriter.write("USER", userId, "USER_UPDATED",
+                new CacheSyncMessage("USER", userId, null, "USER_UPDATED"));
         return Result.ok();
     }
 

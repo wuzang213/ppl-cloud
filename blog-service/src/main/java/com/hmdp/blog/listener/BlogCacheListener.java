@@ -127,10 +127,7 @@ public class BlogCacheListener {
         log.debug("同步关注关系，userId={}, followUserId={}, follow={}", userId, followUserId, data.get("follow"));
     }
 
-    /**
-     * 删除 Redis 中匹配指定模式的键
-     * @param pattern
-     */
+    /** 用 SCAN 删除 Redis 中匹配指定模式的键。 */
     private void deleteRedisKeysByPattern(String pattern) {
         Set<String> keys = stringRedisTemplate.execute((RedisCallback<Set<String>>) connection -> {
             Set<String> matched = new HashSet<>();

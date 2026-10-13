@@ -50,6 +50,11 @@ public class VoucherServiceImpl extends ServiceImpl<VoucherMapper, Voucher> impl
     @Transactional
     public Result addVoucher(VoucherDTO dto) {
         Voucher voucher = BeanUtil.copyProperties(dto, Voucher.class);
+        // 普通代金券默认上架（status=1）：商家未显式指定时按上架处理，
+        // 否则用户侧 POST /voucher-order/buy/{id} 会因 status 校验被拒（查询列表也只返回 status=1）。
+        if (voucher.getStatus() == null) {
+            voucher.setStatus(1);
+        }
         save(voucher);
         outboxWriter.write("VOUCHER", voucher.getId(), "VOUCHER_CREATED",
                 new CacheSyncMessage("VOUCHER", voucher.getId(), voucher.getShopId(), "VOUCHER_CREATED"));
@@ -77,7 +82,7 @@ public class VoucherServiceImpl extends ServiceImpl<VoucherMapper, Voucher> impl
     @Transactional
     public void addSeckillVoucher(VoucherDTO dto) {
         Voucher voucher = BeanUtil.copyProperties(dto, Voucher.class);
-        // 保存优惠券
+        // 保存代金券
         save(voucher);
         // 保存秒杀信息
         SeckillVoucher seckillVoucher = new SeckillVoucher();

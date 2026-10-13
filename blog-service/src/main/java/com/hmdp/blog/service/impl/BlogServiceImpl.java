@@ -19,6 +19,7 @@ import com.hmdp.blog.service.IFollowService;
 import com.hmdp.common.constants.SystemConstants;
 import com.hmdp.common.constants.MqConstants;
 import com.hmdp.common.cache.CacheClient;
+import com.hmdp.common.cache.CacheProperties;
 import com.hmdp.common.cache.SingleFlight;
 import com.hmdp.common.domain.Result;
 import com.hmdp.common.domain.CacheSyncMessage;
@@ -26,7 +27,7 @@ import com.hmdp.common.domain.NoticeMessage;
 import com.hmdp.common.domain.ScrollResult;
 import com.hmdp.common.count.ViewCounter;
 import com.hmdp.common.outbox.OutboxWriter;
-import com.hmdp.common.cache.CacheProperties;
+import com.hmdp.common.search.BlogSearchDocDTO;
 import org.springframework.dao.DataAccessException;
 import com.hmdp.common.domain.UserDTO;
 import com.hmdp.common.exception.BadRequestException;
@@ -83,6 +84,7 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
 
     @Resource
     private CacheClient cacheClient;
+
     // 压测对照开关：hmdp.cache.enabled=false 时跳过全部缓存，直达 MySQL
     @Resource
     private CacheProperties cacheProperties;
@@ -102,37 +104,100 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
 
     @Override
     public Result queryBlogById(Long id) {
+        // 公网入口：计数。抽参数见 queryBlogById(Long, boolean)
+        return queryBlogById(id, true);
+    }
+
+    @Override
+    public Result queryBlogById(Long id, boolean countView) {
         // 请求路径只做一次内存入队，不碰 Redis
         // 注意：改造前后均存在，其开销不计入缓存改造收益，故不受 cache.enabled 控制
-        viewCounter.asyncIncr(VIEW_BLOG_KEY, id);
-
-        Blog blog;
-        // 压测对照开关：直达 MySQL（模拟改造前）
-        if (!cacheProperties.isEnabled()) {
-            blog = getById(id);
-            if (blog == null) {
-                throw new BadRequestException(BlogConstants.BLOG_NOT_FOUND);
-            }
-        } else {
-            // 1. 查Caffeine本地缓存（只缓存博客基础DO，不含 isLike 等用户相关字段）
-            blog = blogCache.getIfPresent(id);
-            if (blog == null) {
-                // 2. Redis + MySQL 整体交给 queryWithPassThrough（自带随机 TTL + 空值防穿透），
-                //    并用 single-flight 合并热点回源；不能只包 DB，否则并发请求依旧各自先打一次 Redis
-                blog = singleFlight.run(CACHE_BLOG_KEY + id, () -> cacheClient.queryWithPassThrough(
-                        CACHE_BLOG_KEY, id, Blog.class, this::getById, CACHE_BLOG_TTL, TimeUnit.MINUTES));
-                if (blog == null) {
-                    throw new BadRequestException(BlogConstants.BLOG_NOT_FOUND);
-                }
-                // 3. 回填Caffeine
-                blogCache.put(id, blog);
-            }
+        if (countView) {
+            viewCounter.asyncIncr(VIEW_BLOG_KEY, id);
         }
-        // 4. 拷贝一份再组装：queryBlogUser / isBlogLiked 是用户相关字段，直接改会污染共享缓存对象
+        Blog blog = loadBlogById(id);
+        if (blog == null) {
+            throw new BadRequestException(BlogConstants.BLOG_NOT_FOUND);
+        }
+        // 拷贝一份再组装：queryBlogUser / isBlogLiked 是用户相关字段，直接改会污染共享缓存对象
         Blog result = copyBlog(blog);
         queryBlogUser(result);
         isBlogLiked(result);
         return Result.ok(result);
+    }
+
+    /** 只读加载笔记（缓存链路 + 防击穿 + 空值防穿透），无任何副作用；不存在返回 {@code null} 而非抛异常 —— 搜索索引同步
+     * 需要把「文档不存在」当正常语义（据此删掉 ES 文档）。公网详情与内部索引反查共用这条实现，差别只在调用方
+     * 是否传 {@code countView}，以及拿不到数据时怎么处理。 */
+    private Blog loadBlogById(Long id) {
+        // 压测对照开关：直达 MySQL（模拟改造前）
+        if (!cacheProperties.isEnabled()) {
+            return getById(id);
+        }
+        // 1. 查Caffeine本地缓存（只缓存博客基础DO，不含 isLike 等用户相关字段）
+        Blog blog = blogCache.getIfPresent(id);
+        if (blog != null) {
+            return blog;
+        }
+        // 2. Redis + MySQL 整体交给 queryWithPassThrough（自带随机 TTL + 空值防穿透），
+        //    并用 single-flight 合并热点回源；不能只包 DB，否则并发请求依旧各自先打一次 Redis
+        blog = singleFlight.run(CACHE_BLOG_KEY + id, () -> cacheClient.queryWithPassThrough(
+                CACHE_BLOG_KEY, id, Blog.class, this::getById, CACHE_BLOG_TTL, TimeUnit.MINUTES));
+        if (blog == null) {
+            return null;
+        }
+        // 3. 回填Caffeine
+        blogCache.put(id, blog);
+        return blog;
+    }
+
+    @Override
+    public Result queryBlogSearchDoc(Long id) {
+        Blog blog = loadBlogById(id);
+        if (blog == null) {
+            // 不存在 = 正常语义（调用方会据此删除 ES 文档），不能抛异常
+            return Result.ok();
+        }
+        // 必须拷贝：缓存对象是共享的，直接 set 作者会污染缓存
+        Blog doc = copyBlog(blog);
+        queryBlogUser(doc);
+        return Result.ok(toSearchDoc(doc));
+    }
+
+    @Override
+    public Result querySearchDocPage(Integer current, Integer size) {
+        // 与公网 /blog/page 同一查询，但补一次批量作者查询（queryBlogUser(List) → 一次 listUserByIds）。
+        // 排序必须用不可变的 id 升序：全量重建是偏移分页，按 create_time 排会被新插入文章挤位、跳过老文章且补不回变更事件，索引永久少一条。
+        Page<Blog> page = query()
+                .orderByAsc("id")
+                .page(new Page<>(current, size));
+        List<Blog> records = page.getRecords();
+        queryBlogUser(records);
+        List<BlogSearchDocDTO> docs = records.stream()
+                .map(this::toSearchDoc)
+                .collect(Collectors.toList());
+        return Result.ok(docs);
+    }
+
+    /**
+     * Blog -> 搜索文档。全量与增量两条路径都走这里，保证口径不分叉。
+     */
+    private BlogSearchDocDTO toSearchDoc(Blog blog) {
+        BlogSearchDocDTO doc = new BlogSearchDocDTO();
+        doc.setId(blog.getId());
+        doc.setShopId(blog.getShopId());
+        doc.setUserId(blog.getUserId());
+        doc.setTitle(blog.getTitle());
+        doc.setImages(blog.getImages());
+        doc.setContent(blog.getContent());
+        doc.setLiked(blog.getLiked());
+        doc.setComments(blog.getComments());
+        doc.setViewCount(blog.getViewCount());
+        doc.setCreateTime(blog.getCreateTime());
+        doc.setUpdateTime(blog.getUpdateTime());
+        doc.setAuthorName(blog.getName());
+        doc.setAuthorIcon(blog.getIcon());
+        return doc;
     }
 
     @Override
@@ -177,12 +242,8 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
         return JSONUtil.toBean(JSONUtil.toJsonStr(blog), Blog.class);
     }
 
-    /**
-     * 只有数据库事务真正提交成功，才执行 runnable。
-     * 仅保留给 {@link #saveBlog} 的弱一致 Feed 推送使用：Feed 属于尽力而为的可见性优化，
-     * 即使推送失败，数据仍在 DB 中，可由读扩散/后续重建兜底。
-     * 其余强一致副作用（缓存失效、GEO、布隆、通知等）一律走 outbox + MQ。
-     */
+    /** 只有数据库事务真正提交成功，才执行 runnable；仅保留给 {@link #saveBlog} 的弱一致 Feed 推送使用（Feed 推送失败数据仍在 DB，
+     * 可由读扩散/后续重建兜底）。其余强一致副作用（缓存失效、GEO、布隆、通知等）一律走 outbox + MQ。 */
     private void afterCommit(Runnable runnable) {
         AfterCommitExecutor.execute(runnable);
     }
@@ -448,7 +509,7 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
         r.setOffset(offset == null ? 1 : offset + 1);
         return Result.ok(r);
     }
-    @Override
+@Override
     public Result queryMyBlog(Integer current) {
         UserDTO user = UserHolder.getUser();
         Page<Blog> page = query()
@@ -490,10 +551,7 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
         queryBlogUser(Collections.singletonList(blog));
     }
 
-    /**
-     * 批量查询blog用户
-     * @param blogs
-     */
+    /** 批量查询并回填博客作者信息。 */
     private void queryBlogUser(List<Blog> blogs) {
         if (blogs == null || blogs.isEmpty()) {
             return;
@@ -541,9 +599,9 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
         blog.setIsLike(score != null);
     }
 
-    /**
-     * 批量填充点赞状态：把 N 条 ZSCORE 用 Pipeline 打包成 1 次网络往返（1 RTT 而不是 N RTT）。
-     */
+    /** 批量填充点赞状态：N 条 ZSCORE 用 Pipeline 打包成 1 次网络往返（1 RTT 而非 N RTT）。不能用 SINTER：各博客点赞用户存在
+     * 独立 key（{@code blog:liked:{blogId}}），SINTER 求的是多集合交集（同时点赞这几条博客的用户），与本场景「当前用户对 N 条
+     * 博客的点赞序」语义完全不同；且 Redis 无「一次命令查多个不同 key 的 zscore」写法，故只能 Pipeline。 */
     private void isBlogLiked(List<Blog> blogs) {
         if (blogs == null || blogs.isEmpty()) {
             return;

@@ -7,10 +7,12 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.github.benmanes.caffeine.cache.Cache;
 
 import com.hmdp.common.cache.CacheClient;
+import com.hmdp.common.cache.CacheProperties;
 import com.hmdp.common.cache.SingleFlight;
 import com.hmdp.common.count.ViewCounter;
 import com.hmdp.common.domain.CacheSyncMessage;
 import com.hmdp.common.outbox.OutboxWriter;
+import com.hmdp.common.search.ShopSearchDocDTO;
 import org.redisson.api.RBloomFilter;
 import com.hmdp.common.constants.SystemConstants;
 import com.hmdp.common.domain.Result;
@@ -18,10 +20,11 @@ import com.hmdp.common.exception.BadRequestException;
 import com.hmdp.shop.constants.ShopConstants;
 import com.hmdp.shop.domain.Shop;
 import com.hmdp.shop.domain.ShopDTO;
+import com.hmdp.shop.domain.ShopType;
 import com.hmdp.shop.mapper.ShopMapper;
 import com.hmdp.shop.service.IShopService;
+import com.hmdp.shop.service.IShopTypeService;
 import lombok.extern.slf4j.Slf4j;
-import com.hmdp.common.cache.CacheProperties;
 import org.springframework.data.geo.Distance;
 import org.springframework.data.geo.GeoResult;
 import org.springframework.data.geo.GeoResults;
@@ -34,6 +37,7 @@ import org.springframework.transaction.annotation.Transactional;
 import javax.annotation.Resource;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import static com.hmdp.common.constants.RedisConstants.*;
 
@@ -66,44 +70,109 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
     @Resource
     private OutboxWriter outboxWriter;
 
+    // 搜索文档需要冗余分类名（typeName 参与检索：搜"火锅"要能出店名不含"火锅"的火锅店）
+    @Resource
+    private IShopTypeService shopTypeService;
+
     @Override
     public Result queryById(Long id) {
         // 增加浏览量，请求路径只做一次内存入队，不碰 Redis
         // 注意：改造前后均存在，其开销不计入缓存改造收益，故不受 cache.enabled 控制
         viewCounter.asyncIncr(VIEW_SHOP_KEY, id);
+        Shop shop = loadShopById(id, true);
+        if (shop == null) {
+            throw new BadRequestException(ShopConstants.SHOP_NOT_FOUND);
+        }
+        return Result.ok(shop);
+    }
 
+    /** 只读加载店铺（缓存链路 + single-flight + 空值防穿透），无任何副作用；不存在返回 {@code null}。
+     * @param checkBloom 是否走布隆过滤器。公网详情走（挡穿透），搜索索引反查不走 —— 布隆是异步写入的，
+     * 新店可能还没进过滤器，走布隆会把「刚建好的店」误判成「不存在」，进而误删 ES 文档。 */
+    private Shop loadShopById(Long id, boolean checkBloom) {
         // 压测对照开关：直达 MySQL（模拟改造前）
         if (!cacheProperties.isEnabled()) {
-            Shop dbShop = getById(id);
-            if (dbShop == null) {
-                throw new BadRequestException(ShopConstants.SHOP_NOT_FOUND);
-            }
-            return Result.ok(dbShop);
+            return getById(id);
         }
-
         // 1. 查Caffeine本地缓存
         Shop shop = shopCache.getIfPresent(id);
         if (shop != null) {
-            // log.info("从Caffeine缓存中获取了数据{}", shop);
-
-            return Result.ok(shop);
+            return shop;
         }
         // 2.只有本地缓存没命中，才访问Redis布隆过滤器
-        if (!shopBloomFilter.contains(id.toString())) {
-            throw new BadRequestException(ShopConstants.SHOP_NOT_FOUND);
+        if (checkBloom && !shopBloomFilter.contains(id.toString())) {
+            return null;
         }
-
         // 3. 查Redis+MySQL，single-flight合并热点回源
         shop = singleFlight.run(CACHE_SHOP_KEY + id, () -> cacheClient
                 .queryWithPassThrough(CACHE_SHOP_KEY, id, Shop.class, this::getById, CACHE_SHOP_TTL, TimeUnit.MINUTES));
         if (shop == null) {
-            throw new BadRequestException(ShopConstants.SHOP_NOT_FOUND);
+            return null;
         }
         // 4. 回填Caffeine
         shopCache.put(id, shop);
+        return shop;
+    }
 
-        return Result.ok(shop);
+    @Override
+    public Result queryShopSearchDoc(Long id) {
+        Shop shop = loadShopById(id, false);
+        if (shop == null) {
+            // 不存在 = 正常语义（调用方据此删 ES 文档）
+            return Result.ok();
+        }
+        return Result.ok(toSearchDoc(shop, shopTypeName(shop.getTypeId())));
+    }
 
+    @Override
+    public Result queryShopSearchDocPage(Integer current, Integer size) {
+        Page<Shop> page = query()
+                .orderByAsc("id")
+                .page(new Page<>(current, size));
+        List<Shop> records = page.getRecords();
+        if (records.isEmpty()) {
+            return Result.ok(Collections.emptyList());
+        }
+        // 分类只有个位数，一次 list() 建映射即可，避免 N 次查库
+        Map<Long, String> typeNameMap = shopTypeService.list().stream()
+                .filter(t -> t.getId() != null)
+                .collect(Collectors.toMap(ShopType::getId, ShopType::getName, (a, b) -> a));
+        List<ShopSearchDocDTO> docs = records.stream()
+                .map(s -> toSearchDoc(s, typeNameMap.get(s.getTypeId())))
+                .collect(Collectors.toList());
+        return Result.ok(docs);
+    }
+
+    private String shopTypeName(Long typeId) {
+        if (typeId == null) {
+            return null;
+        }
+        ShopType type = shopTypeService.getById(typeId);
+        return type == null ? null : type.getName();
+    }
+
+    /** Shop -> 搜索文档。全量与增量两条路径都走这里，保证口径不分叉。{@code typeName} 是店铺索引里唯一有实际
+     * 检索价值的冗余字段：店名往往不含品类词（如「蜀大侠」），把分类名纳入检索字段后，搜「火锅」才能出这些店。 */
+    private ShopSearchDocDTO toSearchDoc(Shop shop, String typeName) {
+        ShopSearchDocDTO doc = new ShopSearchDocDTO();
+        doc.setId(shop.getId());
+        doc.setName(shop.getName());
+        doc.setTypeId(shop.getTypeId());
+        doc.setTypeName(typeName);
+        doc.setImages(shop.getImages());
+        doc.setArea(shop.getArea());
+        doc.setAddress(shop.getAddress());
+        doc.setX(shop.getX());
+        doc.setY(shop.getY());
+        doc.setAvgPrice(shop.getAvgPrice());
+        doc.setSold(shop.getSold());
+        doc.setComments(shop.getComments());
+        doc.setViewCount(shop.getViewCount());
+        doc.setScore(shop.getScore());
+        doc.setOpenHours(shop.getOpenHours());
+        doc.setCreateTime(shop.getCreateTime());
+        doc.setUpdateTime(shop.getUpdateTime());
+        return doc;
     }
 
     @Override
@@ -199,10 +268,8 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         return Result.ok();
     }
 
-    /**
-     * 构造 SHOP 缓存同步消息：把 GEO 更新所需的坐标、类型一并带入，
-     * 由 ShopCacheListener 消费时执行 Redis 缓存删除、GEO 更新与布隆写入。
-     */
+    /** 构造 SHOP 缓存同步消息：把 GEO 更新所需的坐标、类型一并带入，由 ShopCacheListener 消费时执行
+     * Redis 缓存删除、GEO 更新与布隆写入。 */
     private CacheSyncMessage shopSyncMessage(Shop shop, String eventType) {
         Map<String, Object> data = new HashMap<>();
         data.put("typeId", shop.getTypeId());

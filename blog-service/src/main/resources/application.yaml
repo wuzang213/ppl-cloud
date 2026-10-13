@@ -7,17 +7,23 @@ server:
     max-connections: 100
 spring:
   kafka:
-    bootstrap-servers: ${kafka.bootstrap.servers} # 你的Kafka地址
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:127.0.0.1:9092} # 部署时填实际 Kafka 地址
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
     consumer:
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      # 关闭自动提交：浏览量累加必须「处理成功才提交 offset」。
+      # 自动提交是按时间后台推进的，处理成功但提交前重启会造成重复投递，
+      # 处理失败也会被自动提交「带过去」，两头都不对。
       enable-auto-commit: false
       properties:
         spring.json.trusted.packages: "*"
     listener:
+      # 与 enable-auto-commit=false 配套：由监听方法显式 ack 后立即提交 offset。
+      # 必须选 MANUAL_IMMEDIATE 而非 MANUAL：只有它每条处理完立刻提交，
+      # 且 KafkaConsumeErrorConfig 的 setCommitRecovered(true) 才生效（其它 ackMode 只打 ignored 警告，毒消息会堵死分区）。
       ack-mode: manual_immediate
   jackson:
     default-property-inclusion: non_null
@@ -27,18 +33,21 @@ spring:
       max-request-size: 10MB
 hmdp:
   db:
-    database: ${db.blog} # 你的数据库名称
+    database: hmdp_blog
   mp:
     package: blog
   swagger:
     title: 博客服务接口文档
     package: com.hmdp.blog.controller
   upload:
-    dir: ${upload.dir} # 你的上传文件目录
+    dir: ${IMAGE_UPLOAD_DIR:/path/to/nginx/html/hmdp/imgs/} # nginx 静态图片目录，部署时覆盖
 feign:
   okhttp:
     enabled: true # 开启okhttp
   sentinel:
     enabled: true # 开启feign对sentinel的支持
+# canal 客户端订阅过滤：四个库在同一 MySQL 实例、共用一个 canal instance，
+# 而 canal-client 的 handler 只按表名路由（不含库名），必须限定到本服务的库，
+# 否则会收到其它库的 business_outbox 事件（主键跨库撞车）
 canal:
   filter: 'hmdp_blog\.business_outbox'

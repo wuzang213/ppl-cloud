@@ -5,18 +5,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
-/**
- * Kafka 消费幂等：以 (topic, partition, offset) 为唯一键，同一条消息只放行一次。
- */
+/** Kafka 消费幂等：以 (topic, partition, offset) 为唯一键只放行一次 —— offset 天然唯一且消费端可读，无需生产端生成 messageId。
+ * 必须与「累加类业务写」放在同一本地事务，业务写失败一起回滚，重投才不会被幂等表误挡；建表脚本见 sql/consumed_offset.sql。 */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class ConsumedOffsetService {
 
-    /**
-     * 注意：列名 {@code partition} 是 MySQL 保留字、{@code offset} 是关键字，
-     * 必须加反引号，否则部分版本会直接报语法错误。
-     */
+    /** 列名 partition 是 MySQL 保留字、offset 是关键字，必须加反引号，否则部分版本报语法错误。 */
     private static final String INSERT_SQL = """
             INSERT IGNORE INTO consumed_offset(topic, `partition`, `offset`, created_time)
             VALUES (?, ?, ?, NOW())
@@ -24,23 +20,8 @@ public class ConsumedOffsetService {
 
     private final JdbcTemplate jdbcTemplate;
 
-    /**
-     * 尝试把「这条 Kafka 消息」标记为已消费。
-     * <p>
-     * <b>异常时返回 {@code true}（放行）</b>，与 {@code OutboxConsumeService#tryMarkConsumed}
-     * 保持同一口径，理由是失败模式更可控：
-     * <ul>
-     *   <li>放行 → 幂等表不可用期间退化成「改造前的行为」（累加照做，极端情况会重复累加），
-     *       并刷一条 error 日志，浏览量统计不会整体停摆；</li>
-     *   <li>若改为向外抛异常 → 每条消息都在 INSERT 处失败，容器重试耗尽后逐条跳过，
-     *       结果是<b>浏览量全线停止更新</b>，故障面大得多。</li>
-     * </ul>
-     * 这里依赖 MySQL/InnoDB 的语义：单条语句失败只回滚该语句，不会中止整个事务，
-     * 因此 catch 之后同事务内的 UPDATE 仍然可以正常提交（PostgreSQL 下不成立，本项目只用 MySQL）。
-     *
-     * @return {@code true} = 首次处理（调用方应继续执行累加类业务写）；
-     *         {@code false} = 重复消息（调用方必须直接跳过，不做任何业务写）
-     */
+    /** 标记这条 Kafka 消息为已消费：true=首次处理（调用方继续累加业务写），false=重复消息（必须跳过业务写）。
+     * 异常时返回 true 放行（与 OutboxConsumeService#tryMarkConsumed 同口径），免幂等表不可用时浏览量整体停摆；依赖 InnoDB 单条语句失败只回滚该语句。 */
     public boolean tryMarkConsumed(String topic, int partition, long offset) {
         try {
             int inserted = jdbcTemplate.update(INSERT_SQL, topic, partition, offset);

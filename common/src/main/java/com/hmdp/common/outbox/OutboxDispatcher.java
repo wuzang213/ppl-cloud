@@ -14,16 +14,9 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
-/**
- * Outbox 事件投递器。
- * <p>
- * 把 {@code business_outbox} 一行的 payload 投递到目标 MQ，并驱动 outbox 状态机：
- * ack → status=2（已确认）；nack / 异常 → status=0 且 retry_count+1；
- * retry_count &gt;= {@link #MAX_RETRY} → status=3（终态失败）。
- * <p>
- * 投递时统一移除 {@code __TypeId__} header，让消费端按监听方法签名反序列化，
- * 避免生产端与消费端的消息类型不一致导致转换失败（同一 fanout 广播会被多个服务消费）。
- */
+/** Outbox 事件投递器：把 business_outbox 一行的 payload 投到目标 MQ 并驱动状态机
+ * （ack → status=2；nack/异常 → status=0 且 retry_count+1；retry_count >= MAX_RETRY(5) → status=3 终态失败）；
+ * 投递前统一移除 __TypeId__ header，让消费端按监听方法签名反序列化，避免跨服务类型不一致转换失败。 */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -39,12 +32,8 @@ public class OutboxDispatcher {
 
     private final JdbcTemplate jdbcTemplate;
 
-    /**
-     * 投递一条 outbox 事件。调用方需先把 status 置为 1（投递中）。
-     *
-     * @param id          outbox 记录 id
-     * @param payloadJson payload（OutboxEvent 信封 JSON）
-     */
+    /** 投递一条 outbox 事件，调用方需先把 status 置为 1（投递中）。
+     * @param id outbox 记录 id；@param payloadJson payload（OutboxEvent 信封 JSON） */
     public void dispatch(Long id, String payloadJson) {
         OutboxEvent event = parse(payloadJson);
         String exchange = StrUtil.blankToDefault(event.getExchange(), CacheConstants.CACHE_SYNC_FANOUT_EXCHANGE);
@@ -71,10 +60,9 @@ public class OutboxDispatcher {
 
         Integer delayMs = event.getDelayMs();
         if (delayMs != null && delayMs > 0) {
-            // setDelay 依赖 RabbitMQ delayed_message_exchange 插件，且目标交换机必须是
-            // x-delayed-message 类型；普通 direct/topic 交换机会静默忽略 x-delay header，
-            // 消息立即投递（延迟失效）。订单超时已改用「TTL 死信队列」方案（见 voucher 的
-            // OrderTimeoutMqConfig），这里保留 setDelay 仅为兼容历史事件，并打告警提示风险。
+            // ⚠️ setDelay 依赖 RabbitMQ delayed_message_exchange 插件且交换机须为 x-delayed-message 类型，
+            // 否则 x-delay header 被静默忽略、消息立即投递（延迟失效）。订单超时已改用 TTL 死信队列
+            //（voucher 的 OrderTimeoutMqConfig），此处仅兼容历史事件并打告警。
             log.warn("outbox 事件带 delayMs={}，走 setDelay 延迟；若目标交换机 {} 非 x-delayed-message 类型，"
                     + "延迟将静默失效（消息立即投递）。建议改用 TTL 死信队列方案。", delayMs, exchange);
         }
@@ -93,15 +81,8 @@ public class OutboxDispatcher {
         rabbitTemplate.convertAndSend(exchange, routingKey, body, postProcessor, cd);
     }
 
-    /**
-     * 条件认领：仅当记录仍处于「待投递」(status=0) 时才置为「投递中」(status=1)。
-     * <p>
-     * 必须带 status 条件，否则 canal 重投同一批 insert，或同一 MySQL 实例下
-     * 其它库的 outbox 事件因主键撞车落到本库时，会把已确认的记录改回投递中，
-     * 导致对账任务再也扫不到它（事件静默丢失）。
-     *
-     * @return true 表示认领成功，调用方应继续投递；false 表示已被处理过，应跳过
-     */
+    /** 条件认领：仅 status=0（待投递）才置为 status=1（投递中），true=认领成功应继续投递、false=已被处理应跳过。
+     * 必须带 status 条件，否则 canal 重投或其它库 outbox 主键撞车会把已确认记录改回投递中，对账任务再也扫不到它（事件静默丢失）。 */
     public boolean markDispatching(Long id) {
         return jdbcTemplate.update(
                 "UPDATE business_outbox SET status = 1, updated_time = NOW() WHERE id = ? AND status = 0", id) > 0;
@@ -131,11 +112,8 @@ public class OutboxDispatcher {
         }
     }
 
-    /**
-     * 解析 payload：统一为 OutboxEvent 信封；兼容历史裸消息（整体作为 CacheSyncMessage 广播）。
-     * <p>
-     * 对 {@link OutboxCanalHandler} 开放，便于投递前先校验事件归属。
-     */
+    /** 解析 payload：统一为 OutboxEvent 信封；兼容历史裸消息（整体作为 CacheSyncMessage 广播）。
+     * 对 OutboxCanalHandler 开放，便于投递前先校验事件归属。 */
     public OutboxEvent parse(String payloadJson) {
         OutboxEvent event = JSONUtil.toBean(payloadJson, OutboxEvent.class);
         if (event.getBody() == null && event.getExchange() == null

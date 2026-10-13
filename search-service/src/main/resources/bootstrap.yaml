@@ -1,0 +1,36 @@
+spring:
+  application:
+    name: search-service # 服务名称
+  profiles:
+    active: local
+  cloud:
+    nacos:
+      server-addr: ${nacos.server-addr:127.0.0.1:8848} # 本地默认，部署时填实际 Nacos 地址
+      config:
+        file-extension: yaml # 文件后缀名
+        # 服务自身配置 search-service.yaml 读取 HMDP_CLOUD 分组
+        group: HMDP_CLOUD
+        shared-configs: # 共享配置逐条指定分组+动态刷新
+          - dataId: shared-jdbc.yaml
+            group: HMDP_CLOUD
+            refresh: true
+          - dataId: shared-log.yaml
+            group: HMDP_CLOUD
+            refresh: true
+          - dataId: shared-redis.yaml
+            group: HMDP_CLOUD
+            refresh: true
+          - dataId: shared-rabbitmq.yaml
+            group: HMDP_CLOUD
+            refresh: true
+          - dataId: shared-sentinel.yaml
+            group: HMDP_CLOUD
+            refresh: true
+          - dataId: shared-swagger.yaml
+            group: HMDP_CLOUD
+            refresh: true
+          - dataId: shared-elasticsearch.yaml
+            group: HMDP_CLOUD
+            refresh: true
+# 说明：不需要 shared-canal.yaml（不监听 binlog，消费的是既有的 MQ 广播）、也不需要 shared-seata.yaml
+# （不做分布式事务，状态全在 ES 和 search_* 两张表里，且写操作都是幂等的覆盖语义）。

@@ -11,10 +11,7 @@ import java.util.concurrent.TimeUnit;
 
 @Configuration
 public class CaffeineConfig {
-    /**
-     * 热门博客缓存
-     * @return
-     * */
+    /** 热门博客缓存。 */
     @Bean
     public Cache<Integer, List<Blog>> blogHotCache(){
         return Caffeine.newBuilder()
@@ -24,10 +21,7 @@ public class CaffeineConfig {
                 .build();
     }
 
-    /**
-     * 博客缓存
-     * @return
-     * */
+    /** 博客缓存。 */
     @Bean
     public Cache<Long, Blog> blogCache(){
         return Caffeine.newBuilder()

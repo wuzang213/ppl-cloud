@@ -7,16 +7,9 @@ import lombok.extern.slf4j.Slf4j;
 import top.javatool.canal.client.annotation.CanalTable;
 import top.javatool.canal.client.handler.EntryHandler;
 
-/**
- * Canal 监听 {@code business_outbox} 表，将事件交给 {@link OutboxDispatcher} 投递到 MQ。
- * <p>
- * 状态机 0=待投递 / 1=投递中 / 2=已确认 / 3=终态失败，
- * confirm 回调驱动状态机；投递失败回退待投递并累计 retry_count。
- * <p>
- * 四个库部署在同一个 MySQL 实例、共用一个 canal instance 时，各库 {@code business_outbox.id}
- * 都从 1 自增会跨库撞车，正常由客户端 {@code canal.filter} 隔离。为避免 filter 配漏导致
- * 事件被误投或静默丢失，这里做两道防线：事件归属校验 + 条件认领。
- */
+/** Canal 监听 business_outbox 表，将事件交给 OutboxDispatcher 投递到 MQ。状态机 0=待投递 / 1=投递中 / 2=已确认 / 3=终态失败，
+ * confirm 回调驱动，投递失败回退待投递并累计 retry_count；四库共用一个 canal instance 时 business_outbox.id 跨库撞车，
+ * filter 配漏会误投/丢事件，故做两道防线：归属校验 + 条件认领。 */
 @Slf4j
 @RequiredArgsConstructor
 @CanalTable("business_outbox")
@@ -56,9 +49,7 @@ public class OutboxCanalHandler implements EntryHandler<OutboxRow> {
     }
 
     /**
-     * 判断事件是否归属当前服务。
-     * <p>
-     * 历史数据没有 app 字段（或 app 为空）时放行，保持兼容。
+     * 判断事件是否归属当前服务：历史数据无 app 字段（或 app 为空）时放行以保持兼容。
      */
     private boolean isOwnEvent(String payload) {
         if (StrUtil.isBlank(app)) {

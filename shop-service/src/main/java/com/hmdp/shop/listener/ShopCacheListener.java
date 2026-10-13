@@ -83,10 +83,8 @@ public class ShopCacheListener {
         }
     }
 
-    /**
-     * 执行原本放在 afterCommit 中的 Redis 副作用：GEO 坐标更新与布隆写入。
-     * 迁移到 MQ 消费端后，由 outbox 保证投递可对账重试，不再依赖请求线程。
-     */
+    /** 执行原本放在 afterCommit 中的 Redis 副作用：GEO 坐标更新与布隆写入。迁移到 MQ 消费端后，
+     * 由 outbox 保证投递可对账重试，不再依赖请求线程。 */
     private void applyShopSideEffect(CacheSyncMessage message) {
         String eventType = message.getEventType();
         if (eventType == null) {

@@ -5,14 +5,34 @@ hmdp:
     key-store: jwt/public.jks
     key-store-password: ${KEY_STORE_PASSWORD} # 密钥库密码
     key-alias: ${KEY_STORE_ALIAS} # 密钥库别名
+    # 免登录白名单：站内搜索按需求对游客开放（搜索接口本身用"三道护栏+限流"防打爆，见搜索方案 §5.4）
     excludePaths:
-      - /shop/of/name
       - /shop/of/type
       - /voucher/list/**
       - /shop-type/**
       - /blog/hot
+      - /search/**
       - /user/code
       - /user/login
       - /user/register
       - /user/refresh
       - /user/logout
+      # 支付回调：支付宝/微信服务器主动 POST 过来，浏览器会话不存在，必须免登录，否则回调一律 401，支付结果永远进不来（用户付了钱、订单仍待支付）。
+      # 其安全性不依赖网关鉴权，由各自验签守卫保证：alipay → AlipaySignature.rsaCheckV1（RSA2，支付宝公钥）；wechat → NotificationParser（微信支付公钥验签 + APIv3 解密）。
+      - /voucher-order/pay/notify/alipay
+      - /voucher-order/pay/notify/wechat
+    # 内部接口黑名单：优先级高于白名单，命中即 403。/blog/search-doc/**、/shop/search-doc/** 是 search-service 建索引的反查口子（无浏览量副作用），只允许服务间调用。
+    # /search/admin/** 是搜索运维口子（全量重建、一致性修复）——/search/** 免登录，若不单独关掉 admin，任何人按一下就能触发全量重建把 ES 和业务服务打满。
+    # agent 侧高风险内部/运维口子（specs/0023 / plans/0039）：账本读取与 RAG 索引重建，均不应对外可达。
+    # ⚠️ /agent/health、/agent/ready 刻意**不**纳入（高风险才纳入；探活通常直连端口、不经网关）。
+    internalPaths:
+      - /blog/search-doc/**
+      - /shop/search-doc/**
+      - /search/admin/**
+      - /agent/api/v1/ledger/**
+      - /agent/api/v1/agent/rag/**
+  gateway:
+    rate-limit:
+      # /search/** 免登录，靠 Nacos 路由上的 RequestRateLimiter 做按 IP 限流，key 由 RateLimitConfig.clientIpKeyResolver 提供（不能用默认 PrincipalNameKeyResolver：取不到 principal，空 key 会被判 403）。
+      # 该开关默认 false：X-Forwarded-For 客户端可伪造，盲目信任等于没限流，只有网关前面确实有会「覆盖」该头的代理时才打开。
+      trust-x-forwarded-for: false

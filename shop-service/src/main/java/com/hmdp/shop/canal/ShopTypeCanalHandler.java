@@ -22,24 +22,28 @@ public class ShopTypeCanalHandler implements EntryHandler<ShopType> {
     @Override
     public void insert(ShopType shopType) {
         log.debug("Canal监听到tb_shop_type新增，id={}", shopType.getId());
-        CacheSyncMessage msg = new CacheSyncMessage();
-        msg.setType("SHOP_TYPE");
-        rabbitMqHelper.sendMessage(CacheConstants.CACHE_SYNC_FANOUT_EXCHANGE, "", msg);
+        send(shopType.getId());
     }
 
     @Override
     public void update(ShopType before, ShopType after) {
         log.debug("Canal监听到tb_shop_type更新，id={}", after.getId());
-        CacheSyncMessage msg = new CacheSyncMessage();
-        msg.setType("SHOP_TYPE");
-        rabbitMqHelper.sendMessage(CacheConstants.CACHE_SYNC_FANOUT_EXCHANGE, "", msg);
+        send(after.getId());
     }
 
     @Override
     public void delete(ShopType shopType) {
         log.debug("Canal监听到tb_shop_type删除，id={}", shopType.getId());
+        send(shopType.getId());
+    }
+
+    /** 广播分类变更到 CACHE_SYNC_FANOUT_EXCHANGE（type=SHOP_TYPE）。必须带上 id：search-service 收到后要对
+     * {@code hmdp_shop} 索引做 {@code _update_by_query(term: typeId)} 刷新分类名，不知道是哪个分类就只能全量
+     * 刷所有店铺文档（早期 id 为 null 时「分类改名」只能退化成全量刷新）。 */
+    private void send(Long typeId) {
         CacheSyncMessage msg = new CacheSyncMessage();
         msg.setType("SHOP_TYPE");
+        msg.setId(typeId);
         rabbitMqHelper.sendMessage(CacheConstants.CACHE_SYNC_FANOUT_EXCHANGE, "", msg);
     }
 }

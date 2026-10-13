@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>com.hmdp</groupId>
-        <artifactId>ppl-cloud</artifactId>
+        <artifactId>hm-dianping-cloud</artifactId>
         <version>1.0-SNAPSHOT</version>
     </parent>
 
@@ -66,6 +66,30 @@
         <dependency>
             <groupId>com.alibaba.cloud</groupId>
             <artifactId>spring-cloud-starter-alibaba-sentinel</artifactId>
+        </dependency>
+
+        <!-- 支付渠道官方 SDK（version 统一在根 pom 的 dependencyManagement 里管）。⚠️ 支付宝依赖必须排除 commons-logging：否则与 spring-jcl 形成同包双实现（org.apache.commons.logging.LogFactory 在两个 jar 里都有），可能出现 LogFactory 初始化告警甚至 NoClassDefFoundError。 -->
+        <dependency>
+            <groupId>com.alipay.sdk</groupId>
+            <artifactId>alipay-sdk-java</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>commons-logging</groupId>
+                    <artifactId>commons-logging</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <!-- 微信支付 APIv3 SDK（Native / H5 两条渠道） -->
+        <dependency>
+            <groupId>com.github.wechatpay-apiv3</groupId>
+            <artifactId>wechatpay-java</artifactId>
+        </dependency>
+
+        <!-- 单元测试（version 由 parent 的 spring-boot-dependencies 托管，写法同 common/pom.xml）。边界：只测零外部依赖的纯逻辑，不要写 @SpringBootTest（启动会去 Nacos 拉配置必然失败）；SDK 的签名 / 验签 / AES-GCM 解密是纯本地计算不算外部依赖，但微信侧必须用静态 RSAConfig（RSAAutoCertificateConfig 构造即联网）。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 

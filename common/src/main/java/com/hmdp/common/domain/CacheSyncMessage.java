@@ -5,13 +5,8 @@ import lombok.NoArgsConstructor;
 
 import java.util.Map;
 
-/**
- * 缓存同步 / outbox 消息体。
- * <p>
- * eventType 用于区分同一聚合下的不同事件（如 SHOP_CREATED / SHOP_UPDATED / SHOP_DELETED），
- * 由 {@code OutboxWriter} 的 eventType 参数透传，消费端据此决定具体动作；
- * data 用于携带事件附加参数（如 GEO 坐标、秒杀库存等），消费端按需取用。
- */
+/** 缓存同步 / outbox 消息体：eventType 区分同一聚合下的不同动作（SHOP_CREATED / SHOP_UPDATED / SHOP_DELETED，由 OutboxWriter 透传），
+ * data 携带事件附加参数（GEO 坐标、秒杀库存等），消费端按需取用。 */
 @Data
 @NoArgsConstructor
 public class CacheSyncMessage {

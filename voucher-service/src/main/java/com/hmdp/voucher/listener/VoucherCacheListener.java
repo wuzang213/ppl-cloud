@@ -64,10 +64,7 @@ public class VoucherCacheListener {
         applySeckillStockSideEffect(message);
     }
 
-    /**
-     * 秒杀库存 key 的维护（原 afterCommit 逻辑迁移至此，可对账重试）：
-     * 预热 / 删除 / 回补。
-     */
+    /** 秒杀库存 key 的维护：预热（SECKILL_VOUCHER_CREATED）/ 删除（VOUCHER_DELETED）/ 回补（SECKILL_STOCK_RESTORE）。 */
     private void applySeckillStockSideEffect(CacheSyncMessage message) {
         String eventType = message.getEventType();
         if (eventType == null) {

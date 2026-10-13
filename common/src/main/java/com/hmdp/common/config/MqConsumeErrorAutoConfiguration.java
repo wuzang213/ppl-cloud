@@ -41,10 +41,7 @@ public class MqConsumeErrorAutoConfiguration {
     }
 
     /**
-     * 创建消息重发工具
-     *
-     * @param rabbitTemplate
-     * @return
+     * 创建消息重发工具：重试耗尽的失败消息重投到 error.direct / serviceName 路由键。
      */
     @Bean
     public RepublishMessageRecoverer republishMessageRecoverer(RabbitTemplate rabbitTemplate) {

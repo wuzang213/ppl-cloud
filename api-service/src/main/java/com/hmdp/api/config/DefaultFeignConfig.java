@@ -1,5 +1,7 @@
 package com.hmdp.api.config;
 
+import com.hmdp.api.client.fallback.BlogClientFallback;
+import com.hmdp.api.client.fallback.ShopClientFallback;
 import com.hmdp.api.client.fallback.UserClientFallback;
 import com.hmdp.common.domain.UserDTO;
 import com.hmdp.common.utils.UserHolder;
@@ -35,5 +37,18 @@ public class DefaultFeignConfig {
     @Bean
     public UserClientFallback userClientFallback() {
         return new UserClientFallback();
+    }
+
+    /**
+     * 搜索文档反查（search-service 用）的降级工厂。返回 {@code Result.fail(...)} 而非 {@code Result.ok(null)}，search-service 才能区分「调用失败（要重试）」与「文档已删除（要删索引）」。
+     */
+    @Bean
+    public BlogClientFallback blogClientFallback() {
+        return new BlogClientFallback();
+    }
+
+    @Bean
+    public ShopClientFallback shopClientFallback() {
+        return new ShopClientFallback();
     }
 }

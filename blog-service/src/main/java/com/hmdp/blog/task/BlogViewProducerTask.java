@@ -12,9 +12,9 @@ import java.util.List;
 
 import static com.hmdp.common.constants.RedisConstants.VIEW_BLOG_KEY;
 
-/**
- * 博客浏览量：定时把 Redis 聚合计数投递到 Kafka，由消费端批量刷 MySQL。
- */
+/** 博客浏览量：定时把 Redis 聚合计数投递到 Kafka（{@code blog-view-count}），消费端幂等累加至 MySQL。
+ * 聚合在 Redis 侧：{@code takeAndReset} 用 Lua 原子 HGETALL + DEL 取走整个 Hash，故每个 blogId 每轮只产生一条消息
+ * （count 为该周期增量），消费端无需再攒批（见 {@code BlogViewConsumer}）。 */
 @Slf4j
 @Component
 @RequiredArgsConstructor

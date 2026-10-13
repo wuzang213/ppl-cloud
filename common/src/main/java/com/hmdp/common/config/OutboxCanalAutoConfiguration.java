@@ -16,7 +16,7 @@ public class OutboxCanalAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public OutboxCanalHandler outboxCanalHandler(OutboxDispatcher outboxDispatcher,
-                                                 @Value("${spring.application.name:}") String app) {
+                                                @Value("${spring.application.name:}") String app) {
         return new OutboxCanalHandler(outboxDispatcher, app);
     }
 }

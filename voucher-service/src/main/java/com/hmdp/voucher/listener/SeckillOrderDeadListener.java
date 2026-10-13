@@ -10,17 +10,9 @@ import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
 
-/**
- * 秒杀订单死信队列消费者。
- * <p>
- * 当 VoucherOrderListener 消费失败重试耗尽后，消息进入死信队列。
- * 此消费者执行补偿逻辑：
- * 1. 释放 Redis 预扣库存（INCR seckill:{voucherId}:stock）
- * 2. 删除去重标记（SREM seckill:{voucherId}:order {userId}）
- * 3. 记录告警日志
- * <p>
- * 否则会导致"少卖"——Redis 库存已扣但 DB 无订单。
- */
+/** 秒杀订单死信队列消费者：{@link VoucherOrderListener} 重试耗尽后消息进死信，此处补偿 —— 先查库确认订单确实未
+ * 落库，再释放 Redis 预扣库存（INCR seckill:{voucherId}:stock）+ 删去重标记（SREM seckill:{voucherId}:order
+ * {userId}）。必须先校验：{@code createVoucherOrder()} 返回 false 有两义（①DB 已有该订单 ②DB 扣库存失败），情形①回补会让库存虚高且该用户可再下单（超卖）；校验失败时不回补，认「少卖」不认「超卖」。 */
 @Slf4j
 @Component
 public class SeckillOrderDeadListener {

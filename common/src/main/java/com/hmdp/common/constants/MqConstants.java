@@ -41,4 +41,11 @@ public interface MqConstants {
 
     int MQ_RETRY_TIMES = 3;
 
+    // ========== 索引同步死信（search-service） ==========
+    // 主队列 cache.sync.search.queue 在投递/处理失败时，按 x-dead-letter-* 转入此死信链路，
+    // 仅作人工观察窗；重试任务由 search_index_failed 表驱动，不依赖 MQ 重投。
+    String SEARCH_INDEX_DLX_EXCHANGE = "search.index.dlx";
+    String SEARCH_INDEX_DEAD_QUEUE = "search.index.dead.queue";
+    String SEARCH_INDEX_DEAD_ROUTING_KEY = "search.index.dead";
+
 }

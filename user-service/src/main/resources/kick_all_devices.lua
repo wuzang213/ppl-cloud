@@ -1,7 +1,5 @@
--- kickAllDevices 原子删除所有设备的双向索引 + 设备集合（Bug #2 #6）
--- KEYS[1]=设备集合key(login:devices:{userId})
--- ARGV[1]=REFRESH_TOKEN_KEY 前缀  ARGV[2]=REFRESH_INDEX_KEY 前缀  ARGV[3]=userId
--- 返回删除的设备数
+-- kickAllDevices：原子删除所有设备的双向索引 + 设备集合，返回删除的设备数。
+-- KEYS[1]=login:devices:{userId}；ARGV[1]=REFRESH_TOKEN_KEY 前缀 ARGV[2]=REFRESH_INDEX_KEY 前缀 ARGV[3]=userId
 local devices = redis.call('SMEMBERS', KEYS[1])
 local count = 0
 for _, deviceId in ipairs(devices) do

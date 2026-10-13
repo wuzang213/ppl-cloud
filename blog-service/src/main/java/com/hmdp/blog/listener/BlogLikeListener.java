@@ -15,15 +15,8 @@ import javax.annotation.Resource;
 
 import static com.hmdp.common.constants.RedisConstants.BLOG_LIKED_KEY;
 
-/**
- * 博文点赞消息监听器。
- * <p>
- * 只负责维护点赞关系的 Redis ZSet。点赞通知已由 {@code BlogServiceImpl.likeBlog}
- * 直接写入第二条 outbox 事件（{@code BLOG_NOTICE} → notice.direct）投递，
- * 与 {@code FollowServiceImpl.follow} 的 {@code FOLLOW_NOTICE} 写法对称，此处不再二次转发。
- * <p>
- * 无需 messageId 幂等去重：ZSet 的 add / remove 本身幂等，重复消费结果一致。
- */
+/** 博文点赞消息监听器：只维护点赞关系的 Redis ZSet；点赞通知另走 {@code BlogServiceImpl.likeBlog} 的 outbox 事件
+ * （{@code BLOG_NOTICE} → notice.direct），此处不再二次转发。ZSet 的 add/remove 本身幂等，无需 messageId 去重。 */
 @Slf4j
 @Component
 public class BlogLikeListener {

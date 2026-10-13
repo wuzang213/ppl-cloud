@@ -9,11 +9,8 @@ import org.springframework.web.servlet.HandlerInterceptor;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-/**
- * 修复：拦截器只负责"解析 header → 存 UserHolder"，不做鉴权。
- * 鉴权交给 @LoginRequired 注解 + LoginRequiredAspect AOP 切面。
- * 不再从 header 读 nickName/icon（JWT 已瘦身，网关不再透传）。
- */
+/** 拦截器只负责「解析 header → 存 UserHolder」，不做鉴权（交给 @LoginRequired + LoginRequiredAspect）；
+ * 不从 header 读 nickName/icon（JWT 已瘦身，网关不再透传）。 */
 @Slf4j
 public class UserInfoInterceptor implements HandlerInterceptor {
 

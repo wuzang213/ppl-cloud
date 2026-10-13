@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import javax.annotation.Resource;
 
-@Tag(name = "优惠券服务", description = "优惠券新增与查询")
+@Tag(name = "代金券服务", description = "代金券新增与查询")
 @RestController
 @RequestMapping("/voucher")
 public class VoucherController {
@@ -27,14 +27,14 @@ public class VoucherController {
     @Resource
     private IVoucherService voucherService;
 
-    @Operation(summary = "新增普通优惠券")
+    @Operation(summary = "新增普通代金券")
     @PostMapping
     @LoginRequired
     public Result addVoucher(@RequestBody VoucherDTO dto) {
         return voucherService.addVoucher(dto);
     }
 
-    @Operation(summary = "新增秒杀优惠券")
+    @Operation(summary = "新增秒杀代金券")
     @PostMapping("seckill")
     @LoginRequired
     public Result addSeckillVoucher(@RequestBody VoucherDTO dto) {
@@ -42,23 +42,23 @@ public class VoucherController {
         return Result.ok(dto.getId());
     }
 
-    @Operation(summary = "查询店铺优惠券列表")
+    @Operation(summary = "查询店铺代金券列表")
     @GetMapping("/list/{shopId}")
     public Result queryVoucherOfShop(@PathVariable("shopId") @Parameter(description = "店铺ID") Long shopId) {
         return voucherService.queryVoucherOfShop(shopId);
     }
 
-    @Operation(summary = "修改优惠券")
+    @Operation(summary = "修改代金券")
     @PutMapping
     @LoginRequired
     public Result updateVoucher(@RequestBody VoucherDTO dto) {
         return voucherService.updateVoucher(dto);
     }
 
-    @Operation(summary = "删除优惠券")
+    @Operation(summary = "删除代金券")
     @DeleteMapping("/{id}")
     @LoginRequired
-    public Result deleteVoucher(@PathVariable("id") @Parameter(description = "优惠券ID") Long id) {
+    public Result deleteVoucher(@PathVariable("id") @Parameter(description = "代金券ID") Long id) {
         return voucherService.deleteVoucher(id);
     }
 }

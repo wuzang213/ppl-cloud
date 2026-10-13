@@ -1,0 +1,77 @@
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0,
+    "refresh_interval": "1s",
+    "max_result_window": 10000
+  },
+  "mappings": {
+    "properties": {
+      "id": {
+        "type": "long"
+      },
+      "title": {
+        "type": "text",
+        "analyzer": "ik_max_word",
+        "search_analyzer": "ik_smart",
+        "fields": {
+          "keyword": {
+            "type": "keyword",
+            "ignore_above": 256
+          }
+        }
+      },
+      "summary": {
+        "type": "text",
+        "analyzer": "ik_smart"
+      },
+      "content": {
+        "type": "text",
+        "analyzer": "ik_max_word"
+      },
+      "authorId": {
+        "type": "long"
+      },
+      "authorName": {
+        "type": "text",
+        "analyzer": "ik_smart",
+        "fields": {
+          "keyword": {
+            "type": "keyword",
+            "ignore_above": 256
+          }
+        }
+      },
+      "authorIcon": {
+        "type": "keyword",
+        "index": false,
+        "doc_values": false
+      },
+      "shopId": {
+        "type": "long"
+      },
+      "images": {
+        "type": "keyword",
+        "index": false,
+        "doc_values": false
+      },
+      "liked": {
+        "type": "integer"
+      },
+      "comments": {
+        "type": "integer"
+      },
+      "viewCount": {
+        "type": "long"
+      },
+      "createTime": {
+        "type": "date",
+        "format": "strict_date_optional_time||epoch_millis"
+      },
+      "updateTime": {
+        "type": "date",
+        "format": "strict_date_optional_time||epoch_millis"
+      }
+    }
+  }
+}

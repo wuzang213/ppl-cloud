@@ -12,10 +12,7 @@ import java.util.concurrent.TimeUnit;
 
 @Configuration
 public class CaffeineConfig {
-    /**
-     * 优惠券列表缓存
-     * @return
-     * */
+    /** 代金券列表缓存（key=voucherId，value=券列表）。 */
     @Bean
     public Cache<Long, List<Voucher>> voucherListCache(){
         return Caffeine.newBuilder()

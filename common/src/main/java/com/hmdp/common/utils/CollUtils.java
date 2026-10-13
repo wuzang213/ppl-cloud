@@ -41,12 +41,7 @@ public class CollUtils extends CollectionUtil {
     }
 
     /**
-     * 以 conjunction 为分隔符将集合转换为字符串 如果集合元素为数组、Iterable或Iterator，则递归组合其为字符串
-     * @param collection 集合
-     * @param conjunction 分隔符
-     * @param <T> 集合元素类型
-     * @return 连接后的字符串
-     * See Also: IterUtil.join(Iterator, CharSequence)
+     * 以 conjunction 为分隔符拼接集合为字符串，元素为数组/Iterable/Iterator 时递归展开；集合为空返回 null。
      */
     public static <T> String join(Collection<T> collection, CharSequence conjunction) {
         if (null == collection || collection.isEmpty()) {

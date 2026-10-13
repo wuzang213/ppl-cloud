@@ -75,6 +75,23 @@ public class BlogController {
         return blogService.queryBlogById(id);
     }
 
+    /* 搜索索引反查内部口子（非公网）：网关按 hmdp.auth.internalPaths 主动 403，AuthGlobalFilter 黑名单优先于白名单。
+     * 不复用 /blog/{id}（首行 viewCounter.asyncIncr 会虚增浏览量）与 /blog/page（不调 queryBlogUser，全量/增量口径分叉）。 */
+
+    @Operation(summary = "【内部】反查单篇笔记的搜索文档（不计数、含作者）")
+    @GetMapping("/search-doc/{id:\\d+}")
+    public Result searchDoc(@PathVariable("id") @Parameter(description = "笔记ID") Long id) {
+        return blogService.queryBlogSearchDoc(id);
+    }
+
+    @Operation(summary = "【内部】分页反查笔记搜索文档（全量索引用，含作者）")
+    @GetMapping("/search-doc/page")
+    public Result searchDocPage(
+            @RequestParam(value = "current", defaultValue = "1") @Parameter(description = "页码") Integer current,
+            @RequestParam(value = "size", defaultValue = "200") @Parameter(description = "每页数量") Integer size) {
+        return blogService.querySearchDocPage(current, size);
+    }
+
     @Operation(summary = "查询笔记点赞用户Top5")
     @GetMapping("/likes/{id}")
     public Result queryBlogLikes(@PathVariable("id") @Parameter(description = "笔记ID") Long id) {
@@ -108,7 +125,7 @@ public class BlogController {
     @Operation(summary = "博客分页查询")
     @GetMapping("/page")
     public Result queryBlogPage(@RequestParam(value = "current", defaultValue = "1") @Parameter(description = "页码") Integer current,
-                                @RequestParam(value = "size", defaultValue = "100") @Parameter(description = "每页数量") Integer size) {
+                                  @RequestParam(value = "size", defaultValue = "100") @Parameter(description = "每页数量") Integer size) {
         return blogService.queryBlogPage(current, size);
     }
 }

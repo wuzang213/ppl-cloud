@@ -51,3 +51,11 @@ private.jks
 application-local.yaml
 application-dev.yaml
 application-prod.yaml
+
+### 密钥 / 证书类（一律不得入库）###
+*.pem
+*.key
+*.p12
+
+### 构建生成的配置元数据（含默认值，不得入库）###
+spring-configuration-metadata.json

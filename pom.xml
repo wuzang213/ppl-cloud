@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.hmdp</groupId>
-    <artifactId>ppl-cloud</artifactId>
+    <artifactId>hm-dianping-cloud</artifactId>
     <version>1.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
@@ -24,7 +24,7 @@
         <module>voucher-service</module>
         <module>common</module>
         <module>api-service</module>
-    
+        <module>search-service</module>
 
     </modules>
 
@@ -42,6 +42,42 @@
         <canal.version>1.2.1-RELEASE</canal.version>
         <knife4j.version>4.1.0</knife4j.version>
         <seata.version>1.6.1</seata.version>
+        <!--
+            ⚠️ 必须显式覆盖 Elasticsearch 版本，不能删。
+            Spring Boot 2.7.12 的 spring-boot-dependencies 把 elasticsearch.version 托管为 7.17.6，
+            而线上 101 上的 ES 是 **7.12.1**。整组 org.elasticsearch:* 工件（core、rest-client、
+            rest-high-level-client、plugin:* 客户端）都由这一个属性统一取版本，一旦被托管成 7.17.6，
+            就会出现「高阶客户端 7.17.6 打 7.12.1 服务端」的跨版本组合。
+            这里统一锁到 7.12.1，与 101 上的服务端、以及 IK 插件版本严格对齐。
+        -->
+        <elasticsearch.version>7.12.1</elasticsearch.version>
+
+        <!-- 支付宝官方 SDK（ALL = 含全部能力）。约 39.5MB，只进 voucher-service。 -->
+        <alipay-sdk.version>4.40.1014.ALL</alipay-sdk.version>
+        <!-- 微信支付官方 SDK（APIv3） -->
+        <wechatpay-java.version>0.2.17</wechatpay-java.version>
+        <!--
+            ⚠️ 覆盖 Spring Boot BOM 的 okhttp 版本，不要删。
+
+            真实机制（已实测，非推测）：
+            spring-boot-dependencies-2.7.12 第 171 行有 `<okhttp.version>4.9.3</okhttp.version>`，
+            并在第 2698 行以 `<scope>import</scope>` 导入 `com.squareup.okhttp3:okhttp-bom:${okhttp.version}`
+            —— 也就是说 **BOM 是托管 okhttp 的**，默认版本 4.9.3。
+
+            由此有两个推论：
+            1. 「Maven 就近原则把 okhttp 解析到支付宝声明的 3.12.13」这种情形**不可能发生** ——
+               dependencyManagement 对传递依赖一律胜出。所以最初担心的 NoSuchMethodError 不成立。
+            2. 但两个 SDK 期望的版本并不一致：支付宝声明 3.12.13、微信 core 声明 4.10.0，
+               而 BOM 会把两者统一成 4.9.3。4.9.3 实测同时具备
+               `create(MediaType,byte[])`（支付宝用的 3.x 兼容形态）与
+               `create(String,MediaType)`（微信 core 用的 4.x 形态），因此**能用**；
+               这里仍覆盖为 4.10.0，是为了与微信 SDK 自己声明的版本对齐，消除版本偏斜。
+
+            生效方式：覆盖属性会让上面那个 import 取到 okhttp-bom 4.10.0，整族 okhttp 工件（含
+            logging-interceptor 等）一并对齐；下方 dependencyManagement 里还有一条显式条目兜底，
+            以防属性覆盖对 import 作用域不生效。两者最终值相同，重复无害。
+        -->
+        <okhttp.version>4.10.0</okhttp.version>
     </properties>
 
     <!-- 对依赖包进行管理 -->
@@ -87,12 +123,15 @@
                 <artifactId>lombok</artifactId>
                 <version>${org.projectlombok.version}</version>
             </dependency>
-            <!--单元测试-->
-            <dependency>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-starter-test</artifactId>
-                <scope>test</scope>
-            </dependency>
+            <!--
+                ⚠️ 这里原来有一条「无 version」的 spring-boot-starter-test（只有 groupId/artifactId/scope）。
+                那是**无效声明**：dependencyManagement 中缺 version 不会被下层 BOM 补齐，
+                一旦真有模块引用它，整个 reactor 会在 "Scanning for projects" 阶段就报
+                "'dependencies.dependency.version' for ...:jar is missing"。
+                版本本来就由 parent（spring-boot-starter-parent → spring-boot-dependencies）
+                统一托管（实测为 2.7.12），所以直接删掉这条即可 ——
+                模块里按无 version 声明就能取到正确版本。
+            -->
             <dependency>
                 <groupId>com.baomidou</groupId>
                 <artifactId>mybatis-plus-core</artifactId>
@@ -121,9 +160,45 @@
                 <artifactId>seata-spring-boot-starter</artifactId>
                 <version>${seata.version}</version>
             </dependency>
+            <!-- 支付宝官方 SDK（仅 voucher-service 使用） -->
+            <dependency>
+                <groupId>com.alipay.sdk</groupId>
+                <artifactId>alipay-sdk-java</artifactId>
+                <version>${alipay-sdk.version}</version>
+            </dependency>
+            <!-- 微信支付官方 SDK（仅 voucher-service 使用） -->
+            <dependency>
+                <groupId>com.github.wechatpay-apiv3</groupId>
+                <artifactId>wechatpay-java</artifactId>
+                <version>${wechatpay-java.version}</version>
+            </dependency>
+            <!--
+                okhttp 显式钉版（与上面的 okhttp.version 属性同值，兜底用）。
+                BOM 经 okhttp-bom 也管这一条，但这里显式写死可保证：
+                无论 import 作用域的属性覆盖是否生效、也无论哪个 SDK 传递声明了什么版本，
+                okhttp 都只解析成 4.10.0（微信 core 与支付宝所需的两套重载它都具备）。
+            -->
+            <dependency>
+                <groupId>com.squareup.okhttp3</groupId>
+                <artifactId>okhttp</artifactId>
+                <version>${okhttp.version}</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
+    <!--
+        默认不启用 spring-boot-maven-plugin 的 repackage —— 日常 `mvn package` 仍是原来的瘦 jar，
+        不拖慢构建（fat jar 要给每个模块重新打包 40~60MB 的依赖）。
+
+        需要部署（把 jar 传到 Linux 虚拟机跑）时加 -Pdeploy：
+            mvn -Pdeploy -DskipTests clean package
+        这样产出的 xxx-service-1.0-SNAPSHOT.jar 才是可直接 `java -jar` 的完整包。
+
+        ⚠️ repackage 只应作用于「有主类的可执行服务」。
+        common / api-service 是库模块（无 @SpringBootApplication），
+        已在它们各自的 pom 里显式设置 <spring-boot.repackage.skip>true</spring-boot.repackage.skip>，
+        否则 repackage 找不到主类会直接失败。
+    -->
     <profiles>
         <profile>
             <id>deploy</id>
@@ -144,5 +219,41 @@
             </build>
         </profile>
     </profiles>
+
+    <!--
+        构建编码固化。
+        注意：这里只「新增」一个 pluginManagement 段，没有改动上面的 properties /
+        dependencyManagement / profiles —— 目的是与「站内搜索」那批未提交改动完全不相交。
+        spring-boot-starter-parent 已经托管了这两个插件的版本，这里只补 configuration。
+
+        为什么需要：
+        本机 Maven 的平台编码是 GBK，而源码是 UTF-8 且含大量中文注释，
+        不显式声明会在部分环境出现 "unmappable character" 告警甚至乱码。
+
+        作用范围：pluginManagement 只对「自己没有声明该插件」的模块生效；
+        子模块若显式声明了 maven-compiler-plugin，需要自行保持同样的 encoding。
+    -->
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <configuration>
+                        <encoding>UTF-8</encoding>
+                        <release>17</release>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <configuration>
+                        <!-- 让测试 JVM 的 file.encoding 与源码一致，避免含中文的断言在 GBK 下失败 -->
+                        <argLine>-Dfile.encoding=UTF-8</argLine>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
 
 </project>

@@ -9,7 +9,7 @@ hmdp:
     key-store-password: ${KEY_STORE_PASSWORD} # 密钥库密码
     key-alias: ${KEY_STORE_ALIAS} # 密钥库别名
   db:
-    database: ${db.user} # 你的数据库名称
+    database: hmdp_user
   mp:
     package: user
   swagger:
@@ -20,5 +20,8 @@ feign:
     enabled: true # 开启okhttp
   sentinel:
     enabled: true # 开启feign对sentinel的支持
+# canal 客户端订阅过滤：四个库在同一 MySQL 实例、共用一个 canal instance，
+# 而 canal-client 的 handler 只按表名路由（不含库名），必须限定到本服务的库，
+# 否则会收到其它库的 business_outbox 事件（主键跨库撞车）
 canal:
   filter: 'hmdp_user\.business_outbox'

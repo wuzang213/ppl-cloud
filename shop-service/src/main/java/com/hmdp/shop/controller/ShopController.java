@@ -64,11 +64,30 @@ public class ShopController {
         return shopService.queryShopByType(typeId, current, x, y, distance);
     }
 
+    /** 按名称搜索店铺：请求不再直接访问该接口，留给 agent 精确查找店铺。 */
     @Operation(summary = "按名称搜索店铺")
     @GetMapping("/of/name")
     public Result queryShopByName(
             @RequestParam(value = "name", required = false) @Parameter(description = "店铺名称关键字") String name,
             @RequestParam(value = "current", defaultValue = "1") @Parameter(description = "页码") Integer current) {
         return shopService.queryShopByName(name, current);
+    }
+
+    /* 搜索索引反查内部口子（非公网）：网关 AuthGlobalFilter 按 hmdp.auth.internalPaths 主动 403（黑名单优先于白名单）。
+     * 不用现成的 /shop/{id}：它同样有 viewCounter.asyncIncr 副作用；反查也不能走布隆过滤器（新店可能尚未写入布隆
+     * → 被误判「已删除」→ 误删索引）。 */
+
+    @Operation(summary = "【内部】反查店铺搜索文档（不计数、含分类名）")
+    @GetMapping("/search-doc/{id:\\d+}")
+    public Result searchDoc(@PathVariable("id") @Parameter(description = "店铺ID") Long id) {
+        return shopService.queryShopSearchDoc(id);
+    }
+
+    @Operation(summary = "【内部】分页反查店铺搜索文档（全量索引用）")
+    @GetMapping("/search-doc/page")
+    public Result searchDocPage(
+            @RequestParam(value = "current", defaultValue = "1") @Parameter(description = "页码") Integer current,
+            @RequestParam(value = "size", defaultValue = "200") @Parameter(description = "每页数量") Integer size) {
+        return shopService.queryShopSearchDocPage(current, size);
     }
 }

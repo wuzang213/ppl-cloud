@@ -13,10 +13,7 @@ import java.util.concurrent.TimeUnit;
 
 @Configuration
 public class CaffeineConfig {
-    /**
-     * 店铺缓存
-     * @return
-     */
+    /** 店铺缓存。 */
     @Bean
     public Cache<Long, Shop> shopCache(){
         return Caffeine.newBuilder()
@@ -26,10 +23,7 @@ public class CaffeineConfig {
                 .build();
     }
 
-    /**
-     * 店铺类型缓存
-     * @return
-     */
+    /** 店铺类型缓存。 */
     @Bean
     public Cache<String, List<ShopType>> shopTypeListCache(){
         return Caffeine.newBuilder()

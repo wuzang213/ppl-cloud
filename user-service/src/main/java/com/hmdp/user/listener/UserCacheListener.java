@@ -14,9 +14,7 @@ import javax.annotation.Resource;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 用户服务 outbox 事件监听器：订阅缓存同步 fanout 广播，执行签到积分等副作用。
- * <p>
- * 原 afterCommit 中的积分累加已迁移至此，由 outbox + MQ 保证投递，失败可对账重试。
+ * 用户服务 outbox 事件监听器：订阅缓存同步 fanout 广播，执行签到积分等副作用。积分累加由 outbox + MQ 保证投递，失败可对账重试。
  */
 @Slf4j
 @Component

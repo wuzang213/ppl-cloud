@@ -2,6 +2,7 @@ package com.hmdp.common.outbox;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -9,15 +10,15 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Outbox 对账补偿：把长时间未确认投递的消息重新扫描投递。
- * <p>
- * 状态机 0=待投递 / 1=投递中 / 2=已确认 / 3=终态失败。
- * 对账只重置 status=1 超时未确认的（不重置 retry_count）；
- * retry_count 达上限的转 status=3（终态失败）+ 告警。
- * 投递与状态机驱动统一交给 {@link OutboxDispatcher}，与 Canal 首投逻辑保持一致。
- */
+/** Outbox 对账补偿：把长时间未确认投递的消息重新扫描投递。状态机 0=待投递 / 1=投递中 / 2=已确认 / 3=终态失败，
+ * 只重置 status=1 超时未确认的（不重置 retry_count），retry_count 达上限转 status=3 + 告警；
+ * 投递与状态机驱动统一交给 OutboxDispatcher，与 Canal 首投逻辑一致。 */
 @Slf4j
+@ConditionalOnProperty(
+        name = "hmdp.outbox.reconcile.enabled",
+        havingValue = "true",
+        matchIfMissing = true
+)
 @Component
 @RequiredArgsConstructor
 public class OutboxReconcileTask {

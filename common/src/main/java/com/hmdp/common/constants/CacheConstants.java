@@ -16,4 +16,6 @@ public class CacheConstants {
     public static final String QUEUE_BLOG_CACHE = "cache.sync.blog.queue";
     public static final String QUEUE_VOUCHER_CACHE = "cache.sync.voucher.queue";
     public static final String QUEUE_USER_CACHE = "cache.sync.user.queue";
+    // search-service 的索引同步队列（只挂一个队列，复用既有 cache.sync.fanout 广播，业务侧零改动）
+    public static final String QUEUE_SEARCH_INDEX = "cache.sync.search.queue";
 }
