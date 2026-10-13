@@ -48,5 +48,21 @@
           }
         }],
         "uri": "lb://agent-service"
+    },
+    {
+        "id": "search",
+        "predicates": [{
+            "name": "Path",
+            "args": {"_genkey_0":"/search/**"}
+        }],
+        "filters": [{
+            "name": "RequestRateLimiter",
+            "args": {
+                "redis-rate-limiter.replenishRate": "20",
+                "redis-rate-limiter.burstCapacity": "40",
+                "redis-rate-limiter.requestedTokens": "1"
+            }
+        }],
+        "uri": "lb://search-service"
     }
 ]
